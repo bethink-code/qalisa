@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: qalisa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qalisa
+      POSTGRES_PASSWORD: qalisa_dev
+      POSTGRES_DB: qalisa
+    ports:
+      - "55432:5432"
+    volumes:
+      - qalisa_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qalisa -d qalisa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: qalisa-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - qalisa_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  qalisa_pg:
+  qalisa_redis:

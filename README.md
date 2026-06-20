@@ -18,7 +18,7 @@ TypeScript end-to-end, pnpm + Turborepo monorepo.
 | Product UI | React + Vite |
 | DB | PostgreSQL + Drizzle (self-hosted) |
 | Queue | BullMQ on Redis _(from Phase 6)_ |
-| Vault | libsodium envelope encryption, master key from env _(from Phase 1)_ |
+| Vault | `node:crypto` AES-256-GCM envelope encryption, master key from env |
 | Tests | Vitest + Playwright |
 
 ## Layout
@@ -42,7 +42,9 @@ infra/       docker-compose (postgres, redis), env templates
 pnpm install
 
 # 2. Configure env
-cp .env.example .env          # then set VAULT_MASTER_KEY etc.
+cp .env.example .env          # then set VAULT_MASTER_KEY + ADMIN_API_TOKEN
+#   VAULT_MASTER_KEY:  openssl rand -base64 32
+#   ADMIN_API_TOKEN:   openssl rand -base64 24
 
 # 3. Start datastores (Postgres + Redis)
 pnpm infra:up
@@ -72,4 +74,20 @@ pnpm dev
 ## Build phases
 
 Engine-first, then the product UI on top. See the build brief for definition-of-done
-per phase. Current: **Phase 0 — Scaffold**.
+per phase. Current: **Phase 1 — Tenancy + Auth + Vault** (done).
+
+### Engine API so far
+
+Admin-token auth (`Authorization: Bearer <ADMIN_API_TOKEN>`) for provisioning;
+hashed API-key auth (`Authorization: Bearer <api-key>`) for tenant operations.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/v1/tenants` | admin | Create tenant + owner user |
+| `POST` | `/v1/tenants/:id/api-keys` | admin | Issue an API key (raw value returned once) |
+| `POST` | `/v1/credentials` | api-key | Store/replace provider credentials (encrypted to the vault) |
+| `POST` | `/v1/credentials/:id/test` | api-key | Run the adapter health check |
+| `GET`  | `/v1/credentials` | api-key | List configured providers + health status |
+
+Smoke test the whole flow against a running DB:
+`node node_modules/tsx/dist/cli.mjs apps/engine/scripts/verify-phase1.ts`

@@ -11,10 +11,13 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   ENGINE_PORT: z.coerce.number().int().positive().default(4000),
   ENGINE_HOST: z.string().default("0.0.0.0"),
+  LOG_LEVEL: z.string().default("info"),
   DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url().default("redis://localhost:6379"),
-  // Required from Phase 1 (vault). Optional here so Phase 0 boots without it.
-  VAULT_MASTER_KEY: z.string().optional(),
+  REDIS_URL: z.string().url().default("redis://localhost:6380"),
+  // Vault master key — 32 bytes, base64. Required from Phase 1.
+  VAULT_MASTER_KEY: z.string().min(1, "VAULT_MASTER_KEY is required"),
+  // Platform-admin token guarding tenant/api-key provisioning endpoints.
+  ADMIN_API_TOKEN: z.string().min(16, "ADMIN_API_TOKEN must be at least 16 chars"),
 });
 
 const parsed = envSchema.safeParse(process.env);

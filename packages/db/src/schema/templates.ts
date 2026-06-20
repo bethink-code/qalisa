@@ -10,7 +10,7 @@ export const templates = pgTable("templates", {
   channel: channelEnum().notNull(),
   name: text().notNull(),
   body: text().notNull(),
-  variables: jsonb().notNull().default({}),
+  variables: jsonb().$type<Record<string, unknown>>().notNull().default({}),
   whatsappStatus: waTemplateStatusEnum(), // WhatsApp only
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

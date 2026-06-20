@@ -17,7 +17,7 @@ export const providerCredentials = pgTable(
     channel: channelEnum().notNull(),
     provider: providerEnum().notNull(),
     secretRef: text().notNull(),
-    config: jsonb().notNull().default({}),
+    config: jsonb().$type<Record<string, unknown>>().notNull().default({}),
     status: credStatusEnum().notNull().default("unverified"),
     lastHealthCheckAt: timestamp({ withTimezone: true }),
     tokenExpiresAt: timestamp({ withTimezone: true }),

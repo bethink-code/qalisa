@@ -8,6 +8,8 @@ declare global {
       apiKeyId?: string;
       /** True when the request passed admin-token auth (set by adminAuth). */
       isAdmin?: boolean;
+      /** Raw request body bytes — captured by express.json verify for webhook signature checks. */
+      rawBody?: Buffer;
     }
   }
 }

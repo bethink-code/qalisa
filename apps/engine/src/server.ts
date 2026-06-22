@@ -11,7 +11,13 @@ import { webhooksRouter } from "./routes/webhooks";
 /** Build the Express app. Routes are registered per-domain (brief §12). */
 export function createServer(): Express {
   const app = express();
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as Express.Request).rawBody = buf;
+      },
+    }),
+  );
 
   app.use("/health", healthRouter);
   // Admin-token guarded: platform provisioning.

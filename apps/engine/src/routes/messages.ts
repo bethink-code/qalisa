@@ -1,6 +1,7 @@
 import { prepareMessage } from "@qalisa/core";
-import { db } from "@qalisa/db";
+import { db, messages } from "@qalisa/db";
 import { channelSchema } from "@qalisa/shared";
+import { desc, eq } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -59,5 +60,34 @@ messagesRouter.post(
       const message = err instanceof Error ? err.message : "Internal error";
       res.status(statusCode).json({ error: message });
     }
+  }),
+);
+
+// GET /v1/messages — list the tenant's messages, most recent first.
+messagesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
+
+    const rows = await db
+      .select({
+        id: messages.id,
+        channel: messages.channel,
+        provider: messages.provider,
+        to: messages.to,
+        status: messages.status,
+        providerMessageId: messages.providerMessageId,
+        error: messages.error,
+        createdAt: messages.createdAt,
+        sentAt: messages.sentAt,
+        deliveredAt: messages.deliveredAt,
+      })
+      .from(messages)
+      .where(eq(messages.tenantId, tenantId))
+      .orderBy(desc(messages.createdAt))
+      .limit(200);
+
+    res.json(rows);
   }),
 );

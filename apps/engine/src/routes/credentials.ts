@@ -141,3 +141,27 @@ credentialsRouter.get(
     res.json(rows);
   }),
 );
+
+// DELETE /v1/credentials/:id — remove a credential and its vault secret.
+credentialsRouter.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
+
+    const [cred] = await db
+      .select({ id: providerCredentials.id, secretRef: providerCredentials.secretRef })
+      .from(providerCredentials)
+      .where(
+        and(eq(providerCredentials.id, req.params.id ?? ""), eq(providerCredentials.tenantId, tenantId)),
+      )
+      .limit(1);
+    if (!cred) { res.status(404).json({ error: "Credential not found" }); return; }
+
+    await db
+      .delete(providerCredentials)
+      .where(and(eq(providerCredentials.id, cred.id), eq(providerCredentials.tenantId, tenantId)));
+    await vault.deleteSecret(cred.secretRef, tenantId);
+    res.status(204).send();
+  }),
+);

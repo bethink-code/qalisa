@@ -1,10 +1,10 @@
-import { sendMessage } from "@qalisa/core";
+import { prepareMessage } from "@qalisa/core";
 import { db } from "@qalisa/db";
 import { channelSchema } from "@qalisa/shared";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { vault } from "../services";
+import { sendQueue } from "../queue";
 
 export const messagesRouter: Router = Router();
 
@@ -23,15 +23,13 @@ const sendRequestSchema = z
     path: ["templateId"],
   });
 
-// POST /v1/messages — submit a message for immediate synchronous delivery.
+// POST /v1/messages — validate, pre-check, then enqueue for async delivery.
+// Returns 202 Accepted with { messageId, status: "queued" }.
 messagesRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const tenantId = req.tenantId;
-    if (!tenantId) {
-      res.status(401).json({ error: "Unauthenticated" });
-      return;
-    }
+    if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
 
     const parsed = sendRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -40,8 +38,22 @@ messagesRouter.post(
     }
 
     try {
-      const result = await sendMessage(tenantId, parsed.data, { db, vault });
-      res.status(201).json(result);
+      const prep = await prepareMessage(tenantId, parsed.data, { db });
+
+      if (prep.status === "failed") {
+        res.status(200).json({ messageId: prep.messageId, status: "failed", error: prep.error });
+        return;
+      }
+
+      // Already processed via idempotency (credentialId is empty sentinel).
+      if (!prep.credentialId) {
+        res.status(200).json({ messageId: prep.messageId, status: "queued" });
+        return;
+      }
+
+      await sendQueue.add("send", { tenantId, ...prep });
+
+      res.status(202).json({ messageId: prep.messageId, status: "queued" });
     } catch (err) {
       const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
       const message = err instanceof Error ? err.message : "Internal error";

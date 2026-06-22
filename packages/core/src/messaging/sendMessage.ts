@@ -1,15 +1,10 @@
-import { getAdapter } from "@qalisa/adapters";
 import type { Db } from "@qalisa/db";
-import {
-  messages,
-  providerCredentials,
-  suppressions,
-  templates,
-  usageEvents,
-} from "@qalisa/db/schema";
+import { messages } from "@qalisa/db/schema";
 import type { Channel, MessageStatus } from "@qalisa/shared";
 import { and, eq } from "drizzle-orm";
 import type { Vault } from "../vault/vault";
+import { dispatchMessage } from "./dispatchMessage";
+import { prepareMessage } from "./prepareMessage";
 
 export interface SendInput {
   channel: Channel;
@@ -29,144 +24,49 @@ export interface SendOutput {
 }
 
 /**
- * Core send orchestration: idempotency guard → credential lookup →
- * suppression check → message record → template resolution → adapter.send()
- * → UsageEvent. Throws (with statusCode) for precondition failures.
- * Returns a "failed" SendOutput for adapter-level errors so the caller
- * always gets a message record back.
+ * Synchronous end-to-end send: prepare (pre-checks + record) then dispatch
+ * (vault + adapter + UsageEvent). Used in integration tests and retained for
+ * direct use where BullMQ is not available. The async route uses prepareMessage
+ * + enqueue instead.
  */
 export async function sendMessage(
   tenantId: string,
   input: SendInput,
   deps: { db: Db; vault: Vault },
 ): Promise<SendOutput> {
-  const { db, vault } = deps;
-  const { channel, to, subject, body, templateId, variables, idempotencyKey } = input;
+  const prep = await prepareMessage(tenantId, input, deps);
 
-  // Idempotency: return the existing record without re-sending.
-  if (idempotencyKey) {
-    const [existing] = await db
-      .select({
-        id: messages.id,
-        status: messages.status,
-        providerMessageId: messages.providerMessageId,
-        error: messages.error,
-      })
+  if (prep.status === "failed") {
+    return { messageId: prep.messageId, providerMessageId: null, status: "failed", error: prep.error };
+  }
+
+  // Already processed (idempotency hit, credentialId is "").
+  if (!prep.credentialId) {
+    const [existing] = await deps.db
+      .select({ status: messages.status, providerMessageId: messages.providerMessageId, error: messages.error })
       .from(messages)
-      .where(
-        and(eq(messages.tenantId, tenantId), eq(messages.idempotencyKey, idempotencyKey)),
-      )
+      .where(and(eq(messages.id, prep.messageId), eq(messages.tenantId, tenantId)))
       .limit(1);
-    if (existing) {
-      return {
-        messageId: existing.id,
-        providerMessageId: existing.providerMessageId ?? null,
-        status: existing.status,
-        error: existing.error ?? undefined,
-      };
-    }
+    return {
+      messageId: prep.messageId,
+      providerMessageId: existing?.providerMessageId ?? null,
+      status: existing?.status ?? "queued",
+      error: existing?.error ?? undefined,
+    };
   }
 
-  // Require a healthy credential for the requested channel.
-  const [cred] = await db
-    .select()
-    .from(providerCredentials)
-    .where(
-      and(
-        eq(providerCredentials.tenantId, tenantId),
-        eq(providerCredentials.channel, channel),
-        eq(providerCredentials.status, "healthy"),
-      ),
-    )
+  await dispatchMessage(tenantId, prep, deps);
+
+  const [final] = await deps.db
+    .select({ status: messages.status, providerMessageId: messages.providerMessageId, error: messages.error })
+    .from(messages)
+    .where(and(eq(messages.id, prep.messageId), eq(messages.tenantId, tenantId)))
     .limit(1);
-  if (!cred) {
-    throw Object.assign(
-      new Error(`No healthy credential configured for channel '${channel}'`),
-      { statusCode: 422 },
-    );
-  }
 
-  // Suppression check — must never send to suppressed recipients.
-  const [suppressed] = await db
-    .select({ id: suppressions.id })
-    .from(suppressions)
-    .where(
-      and(
-        eq(suppressions.tenantId, tenantId),
-        eq(suppressions.channel, channel),
-        eq(suppressions.identifier, to),
-      ),
-    )
-    .limit(1);
-  if (suppressed) {
-    throw Object.assign(
-      new Error(`Recipient '${to}' is suppressed on channel '${channel}'`),
-      { statusCode: 422 },
-    );
-  }
-
-  // Create the message in "queued" state. Everything from here has a record.
-  const [msg] = await db
-    .insert(messages)
-    .values({
-      tenantId,
-      channel,
-      provider: cred.provider,
-      to,
-      templateId: templateId ?? null,
-      status: "queued",
-      idempotencyKey: idempotencyKey ?? null,
-    })
-    .returning({ id: messages.id });
-  if (!msg) throw new Error("Failed to create message record");
-  const messageId = msg.id;
-
-  // Resolve body from template when templateId is provided.
-  let resolvedBody = body ?? "";
-  if (templateId) {
-    const [tmpl] = await db
-      .select({ body: templates.body })
-      .from(templates)
-      .where(and(eq(templates.id, templateId), eq(templates.tenantId, tenantId)))
-      .limit(1);
-    if (!tmpl) {
-      await db
-        .update(messages)
-        .set({ status: "failed", error: "template not found" })
-        .where(and(eq(messages.id, messageId), eq(messages.tenantId, tenantId)));
-      return { messageId, providerMessageId: null, status: "failed", error: "template not found" };
-    }
-    resolvedBody = renderTemplate(tmpl.body, variables ?? {});
-  }
-
-  // Dispatch to adapter. Any adapter error marks the record "failed" and returns.
-  try {
-    const secret = await vault.resolveSecret(cred.secretRef, tenantId);
-    const adapter = getAdapter(channel, cred.provider);
-    const result = await adapter.send(
-      { channel, to, subject, body: resolvedBody, templateId, variables },
-      { config: cred.config, secret },
-    );
-
-    await db
-      .update(messages)
-      .set({ status: "sent", providerMessageId: result.providerMessageId, sentAt: new Date() })
-      .where(and(eq(messages.id, messageId), eq(messages.tenantId, tenantId)));
-
-    await db.insert(usageEvents).values({ tenantId, channel, messageId });
-
-    return { messageId, providerMessageId: result.providerMessageId, status: "sent" };
-  } catch (err) {
-    const errorText = err instanceof Error ? err.message : String(err);
-    await db
-      .update(messages)
-      .set({ status: "failed", error: errorText })
-      .where(and(eq(messages.id, messageId), eq(messages.tenantId, tenantId)));
-    return { messageId, providerMessageId: null, status: "failed", error: errorText };
-  }
-}
-
-/** Replace {{variable}} placeholders in template body. Unresolved keys pass through. */
-function renderTemplate(body: string, variables: Record<string, string>): string {
-  return body.replace(/\{\{(\w+)\}\}/g, (_, key: string) => variables[key] ?? `{{${key}}}`);
+  return {
+    messageId: prep.messageId,
+    providerMessageId: final?.providerMessageId ?? null,
+    status: final?.status ?? "failed",
+    error: final?.error ?? undefined,
+  };
 }

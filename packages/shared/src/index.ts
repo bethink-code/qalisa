@@ -3,3 +3,4 @@ export * from "./messages";
 export * from "./credentials";
 export * from "./secret";
 export * from "./tenants";
+export * from "./templates";

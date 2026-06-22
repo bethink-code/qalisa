@@ -6,6 +6,7 @@ import { credentialsRouter } from "./routes/credentials";
 import { healthRouter } from "./routes/health";
 import { messagesRouter } from "./routes/messages";
 import { tenantsRouter } from "./routes/tenants";
+import { templatesRouter } from "./routes/templates";
 import { webhooksRouter } from "./routes/webhooks";
 
 /** Build the Express app. Routes are registered per-domain (brief §12). */
@@ -25,6 +26,7 @@ export function createServer(): Express {
   // API-key guarded: tenant-scoped operations.
   app.use("/v1/credentials", apiKeyAuth, credentialsRouter);
   app.use("/v1/messages", apiKeyAuth, messagesRouter);
+  app.use("/v1/templates", apiKeyAuth, templatesRouter);
   // Webhook routes: no bearer auth — provider-signed payloads, tenant via URL.
   app.use("/v1/webhooks", webhooksRouter);
 

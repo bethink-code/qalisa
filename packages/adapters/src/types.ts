@@ -17,6 +17,7 @@ export interface ResolvedCreds {
 export interface OutboundMessage {
   channel: Channel;
   to: string;
+  subject?: string;
   body?: string;
   templateId?: string;
   variables?: Record<string, string>;

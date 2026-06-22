@@ -101,6 +101,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@qalisa/adapters':
+        specifier: workspace:*
+        version: link:../adapters
       '@qalisa/db':
         specifier: workspace:*
         version: link:../db

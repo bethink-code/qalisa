@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:worker": "tsx watch src/worker.ts",
-    "build": "tsc",
+    "build": "tsup src/index.ts src/worker.ts --format esm --target node22",
     "start": "node dist/index.js",
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
@@ -29,6 +29,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
+    "tsup": "^8.5.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

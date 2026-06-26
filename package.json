@@ -25,7 +25,8 @@
   "pnpm": {
     "overrides": {
       "ioredis": "^5.11.1"
-    }
+    },
+    "onlyBuiltDependencies": ["esbuild"]
   },
   "devDependencies": {
     "tsx": "^4.19.2",

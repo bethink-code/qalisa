@@ -3,7 +3,7 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { env } from "./env";
 
-export const SEND_QUEUE = "messages:send";
+export const SEND_QUEUE = "messages-send";
 
 export type SendJobData = DispatchInput & { tenantId: string };
 

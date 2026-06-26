@@ -9,7 +9,9 @@ dotenv.config({ path: resolve(here, "../../../.env") });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  ENGINE_PORT: z.coerce.number().int().positive().default(4000),
+  ENGINE_PORT: z.coerce.number().int().positive().default(
+    parseInt(process.env.PORT ?? "4000", 10)
+  ),
   ENGINE_HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.string().default("info"),
   DATABASE_URL: z.string().url(),

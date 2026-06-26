@@ -5,4 +5,7 @@ export default defineConfig({
   format: ["esm"],
   target: "node22",
   noExternal: [/^@qalisa\//],
+  banner: {
+    js: `import { createRequire } from "module"; const require = createRequire(import.meta.url);`,
+  },
 });

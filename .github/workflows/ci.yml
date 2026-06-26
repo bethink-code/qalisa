@@ -8,6 +8,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qalisa
+          POSTGRES_PASSWORD: qalisa
+          POSTGRES_DB: qalisa_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +42,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Run migrations
+        run: pnpm --filter @qalisa/db db:migrate
+        env:
+          DATABASE_URL: postgresql://qalisa:qalisa@localhost:5432/qalisa_test
+
       - name: Test
         run: pnpm turbo run test
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: postgresql://qalisa:qalisa@localhost:5432/qalisa_test
           VAULT_MASTER_KEY: ${{ secrets.VAULT_MASTER_KEY }}

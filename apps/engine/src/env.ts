@@ -18,6 +18,8 @@ const envSchema = z.object({
   VAULT_MASTER_KEY: z.string().min(1, "VAULT_MASTER_KEY is required"),
   // Platform-admin token guarding tenant/api-key provisioning endpoints.
   ADMIN_API_TOKEN: z.string().min(16, "ADMIN_API_TOKEN must be at least 16 chars"),
+  // Comma-separated allowed origins for CORS. Defaults to localhost:3000 for dev.
+  CORS_ORIGIN: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

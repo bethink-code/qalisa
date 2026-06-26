@@ -1,0 +1,7 @@
+{
+  "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter @qalisa/web build",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

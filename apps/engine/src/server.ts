@@ -1,4 +1,6 @@
+import cors from "cors";
 import express, { type Express } from "express";
+import { env } from "./env";
 import { adminAuth } from "./middleware/adminAuth";
 import { apiKeyAuth } from "./middleware/apiKeyAuth";
 import { errorHandler, notFoundHandler } from "./middleware/errors";
@@ -12,6 +14,11 @@ import { webhooksRouter } from "./routes/webhooks";
 /** Build the Express app. Routes are registered per-domain (brief §12). */
 export function createServer(): Express {
   const app = express();
+  app.set("trust proxy", 1);
+  const allowedOrigins = env.CORS_ORIGIN
+    ? env.CORS_ORIGIN.split(",").map((o) => o.trim())
+    : ["http://localhost:3000"];
+  app.use(cors({ origin: allowedOrigins }));
   app.use(
     express.json({
       verify: (req, _res, buf) => {

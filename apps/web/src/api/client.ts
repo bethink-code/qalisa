@@ -1,4 +1,4 @@
-const BASE = "/v1";
+const BASE = `${import.meta.env.VITE_ENGINE_URL ?? ""}/v1`;
 const KEY = "qalisa_api_key";
 
 export function getApiKey(): string {

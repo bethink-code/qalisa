@@ -27,4 +27,7 @@ jobs:
         run: pnpm build
 
       - name: Test
-        run: pnpm test
+        run: pnpm turbo run test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VAULT_MASTER_KEY: ${{ secrets.VAULT_MASTER_KEY }}

@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "pnpm install --frozen-lockfile && pnpm turbo build --filter=@qalisa/engine..."
+
+[deploy]
+startCommand = "node apps/engine/dist/worker.js"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

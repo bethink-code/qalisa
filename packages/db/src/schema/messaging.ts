@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { channelEnum, messageStatusEnum, providerEnum } from "./enums";
 import { templates } from "./templates";
 import { tenants } from "./tenancy";
@@ -23,7 +23,10 @@ export const messages = pgTable(
     sentAt: timestamp({ withTimezone: true }),
     deliveredAt: timestamp({ withTimezone: true }),
   },
-  (t) => [unique().on(t.tenantId, t.idempotencyKey)],
+  (t) => [
+    unique().on(t.tenantId, t.idempotencyKey),
+    index("messages_tenant_id_created_at_idx").on(t.tenantId, t.createdAt),
+  ],
 );
 
 /** Append-only usage ledger — aggregated for rate-limits + billing. */

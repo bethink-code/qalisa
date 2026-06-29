@@ -34,6 +34,7 @@ export const mailgunAdapter: ChannelAdapter = {
     try {
       res = await fetch(`${baseUrl(config.region)}/domains/${domain}`, {
         headers: { Authorization: basicAuth(apiKey) },
+        signal: AbortSignal.timeout(10_000),
       });
     } catch (err) {
       return { ok: false, detail: `network error: ${String(err)}` };
@@ -69,6 +70,7 @@ export const mailgunAdapter: ChannelAdapter = {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: form.toString(),
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
       throw new Error(`Mailgun network error: ${String(err)}`);
@@ -88,20 +90,28 @@ export const mailgunAdapter: ChannelAdapter = {
     const body = req.body as Record<string, unknown>;
     const sig = body["signature"] as Record<string, unknown> | undefined;
 
-    // Verify HMAC-SHA256 signature when a signing key is configured.
+    // Require HMAC-SHA256 signature verification — reject if signing key is not configured.
     const signingKey =
       typeof creds.config.webhookSigningKey === "string" ? creds.config.webhookSigningKey : null;
-    if (signingKey && sig) {
-      const timestamp = String(sig["timestamp"] ?? "");
-      const token = String(sig["token"] ?? "");
-      const signature = String(sig["signature"] ?? "");
-      const expected = createHmac("sha256", signingKey).update(timestamp + token).digest("hex");
-      if (
-        expected.length !== signature.length ||
-        !timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(signature, "utf8"))
-      ) {
-        throw new Error("Mailgun webhook signature verification failed");
-      }
+    if (!signingKey) {
+      throw new Error("Mailgun webhook rejected: webhookSigningKey is not configured on this credential");
+    }
+    if (!sig) {
+      throw new Error("Mailgun webhook rejected: missing signature block");
+    }
+    const timestamp = String(sig["timestamp"] ?? "");
+    const token = String(sig["token"] ?? "");
+    const signature = String(sig["signature"] ?? "");
+    const expected = createHmac("sha256", signingKey).update(timestamp + token).digest("hex");
+    if (
+      expected.length !== signature.length ||
+      !timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(signature, "utf8"))
+    ) {
+      throw new Error("Mailgun webhook signature verification failed");
+    }
+    const tsMs = parseInt(timestamp, 10) * 1000;
+    if (Math.abs(Date.now() - tsMs) > 15 * 60 * 1000) {
+      throw new Error("Mailgun webhook rejected: timestamp outside 15-minute window (possible replay)");
     }
 
     const eventData = body["event-data"] as Record<string, unknown> | undefined;

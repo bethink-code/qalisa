@@ -128,6 +128,15 @@ describe("send", () => {
 });
 
 describe("parseWebhook", () => {
+  const APP_SECRET = "test-app-secret";
+  const signedCreds = { config: { ...config, appSecret: APP_SECRET }, secret };
+
+  function makeRequest(body: unknown) {
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const sig = createHmac("sha256", APP_SECRET).update(rawBody).digest("hex");
+    return { headers: { "x-hub-signature-256": `sha256=${sig}` }, body, rawBody };
+  }
+
   const deliveredPayload = {
     object: "whatsapp_business_account",
     entry: [
@@ -148,11 +157,24 @@ describe("parseWebhook", () => {
     ],
   };
 
+  it("throws when appSecret is not configured", async () => {
+    await expect(
+      metaAdapter.parseWebhook(makeRequest(deliveredPayload), { config: {}, secret }),
+    ).rejects.toThrow("appSecret is not configured");
+  });
+
+  it("throws when signature is wrong", async () => {
+    const rawBody = Buffer.from(JSON.stringify(deliveredPayload));
+    await expect(
+      metaAdapter.parseWebhook(
+        { headers: { "x-hub-signature-256": "sha256=badsignature" }, body: deliveredPayload, rawBody },
+        signedCreds,
+      ),
+    ).rejects.toThrow("signature verification failed");
+  });
+
   it("parses a delivered status event", async () => {
-    const events = await metaAdapter.parseWebhook(
-      { headers: {}, body: deliveredPayload },
-      { config: {}, secret },
-    );
+    const events = await metaAdapter.parseWebhook(makeRequest(deliveredPayload), signedCreds);
     expect(events).toHaveLength(1);
     expect(events[0]!.status).toBe("delivered");
     expect(events[0]!.providerMessageId).toBe("wamid.abc");
@@ -163,7 +185,7 @@ describe("parseWebhook", () => {
       ...deliveredPayload,
       entry: [{ ...deliveredPayload.entry[0]!, changes: [{ field: "messages", value: { statuses: [{ id: "wamid.x", status: "read", timestamp: "1", recipient_id: "x" }] } }] }],
     };
-    const events = await metaAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events[0]!.status).toBe("delivered");
   });
 
@@ -172,7 +194,7 @@ describe("parseWebhook", () => {
       ...deliveredPayload,
       entry: [{ ...deliveredPayload.entry[0]!, changes: [{ field: "messages", value: { statuses: [{ id: "wamid.x", status: "sent" }] } }] }],
     };
-    const events = await metaAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events[0]!.status).toBe("sent");
   });
 
@@ -181,7 +203,7 @@ describe("parseWebhook", () => {
       ...deliveredPayload,
       entry: [{ ...deliveredPayload.entry[0]!, changes: [{ field: "messages", value: { statuses: [{ id: "wamid.x", status: "failed" }] } }] }],
     };
-    const events = await metaAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events[0]!.status).toBe("failed");
   });
 
@@ -190,15 +212,13 @@ describe("parseWebhook", () => {
       ...deliveredPayload,
       entry: [{ ...deliveredPayload.entry[0]!, changes: [{ field: "messages", value: { statuses: [{ id: "wamid.x", status: "initiated" }] } }] }],
     };
-    const events = await metaAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events).toHaveLength(0);
   });
 
   it("returns empty array for non-WABA object types", async () => {
-    const events = await metaAdapter.parseWebhook(
-      { headers: {}, body: { object: "something_else" } },
-      { config: {}, secret },
-    );
+    const body = { object: "something_else" };
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events).toHaveLength(0);
   });
 
@@ -207,38 +227,8 @@ describe("parseWebhook", () => {
       object: "whatsapp_business_account",
       entry: [{ id: "x", changes: [{ field: "account_review", value: { statuses: [{ id: "wamid.x", status: "delivered" }] } }] }],
     };
-    const events = await metaAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events).toHaveLength(0);
-  });
-
-  it("verifies HMAC-SHA256 signature when appSecret is configured", async () => {
-    const appSecret = "test-app-secret";
-    const rawBody = Buffer.from(JSON.stringify(deliveredPayload));
-    const sig = createHmac("sha256", appSecret).update(rawBody).digest("hex");
-    const events = await metaAdapter.parseWebhook(
-      { headers: { "x-hub-signature-256": `sha256=${sig}` }, body: deliveredPayload, rawBody },
-      { config: { ...config, appSecret }, secret },
-    );
-    expect(events).toHaveLength(1);
-  });
-
-  it("throws when signature is wrong", async () => {
-    const rawBody = Buffer.from(JSON.stringify(deliveredPayload));
-    await expect(
-      metaAdapter.parseWebhook(
-        { headers: { "x-hub-signature-256": "sha256=badsignature" }, body: deliveredPayload, rawBody },
-        { config: { ...config, appSecret: "test-app-secret" }, secret },
-      ),
-    ).rejects.toThrow("signature verification failed");
-  });
-
-  it("skips signature check when appSecret is not in config", async () => {
-    const rawBody = Buffer.from(JSON.stringify(deliveredPayload));
-    const events = await metaAdapter.parseWebhook(
-      { headers: { "x-hub-signature-256": "sha256=garbage" }, body: deliveredPayload, rawBody },
-      { config: {}, secret },
-    );
-    expect(events).toHaveLength(1);
   });
 
   it("handles multiple statuses across multiple entries", async () => {
@@ -249,7 +239,7 @@ describe("parseWebhook", () => {
         { id: "e2", changes: [{ field: "messages", value: { statuses: [{ id: "wamid.c", status: "sent" }] } }] },
       ],
     };
-    const events = await metaAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
     expect(events).toHaveLength(3);
   });
 });

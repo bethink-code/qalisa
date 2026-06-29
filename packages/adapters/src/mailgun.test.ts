@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { Secret } from "@qalisa/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mailgunAdapter } from "./mailgun";
@@ -103,85 +104,79 @@ describe("send", () => {
 });
 
 describe("parseWebhook", () => {
+  const SIGNING_KEY = "test-webhook-key";
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const token = "validtoken";
+  const correctSig = createHmac("sha256", SIGNING_KEY).update(timestamp + token).digest("hex");
+
   const deliveredBody = {
-    signature: { timestamp: "1529006854", token: "validtoken", signature: "placeholder" },
+    signature: { timestamp, token, signature: correctSig },
     "event-data": {
       event: "delivered",
       message: { headers: { "message-id": "<20240101.abc@mg.example.com>" } },
     },
   };
+  const signedCreds = { config: { webhookSigningKey: SIGNING_KEY }, secret };
 
-  it("parses a delivered event without signature key (skips verification)", async () => {
-    const events = await mailgunAdapter.parseWebhook(
-      { headers: {}, body: deliveredBody },
-      { config: {}, secret },
-    );
+  it("throws when webhookSigningKey is not configured", async () => {
+    await expect(
+      mailgunAdapter.parseWebhook({ headers: {}, body: deliveredBody }, { config: {}, secret }),
+    ).rejects.toThrow("webhookSigningKey is not configured");
+  });
+
+  it("throws when signature block is missing", async () => {
+    await expect(
+      mailgunAdapter.parseWebhook(
+        { headers: {}, body: { "event-data": deliveredBody["event-data"] } },
+        signedCreds,
+      ),
+    ).rejects.toThrow("missing signature block");
+  });
+
+  it("throws when signature is wrong", async () => {
+    const body = { ...deliveredBody, signature: { ...deliveredBody.signature, signature: "bad" } };
+    await expect(
+      mailgunAdapter.parseWebhook({ headers: {}, body }, signedCreds),
+    ).rejects.toThrow("signature verification failed");
+  });
+
+  it("throws when timestamp is stale (replay protection)", async () => {
+    const staleTs = String(Math.floor(Date.now() / 1000) - 20 * 60); // 20 minutes ago
+    const staleSig = createHmac("sha256", SIGNING_KEY).update(staleTs + token).digest("hex");
+    const body = { ...deliveredBody, signature: { timestamp: staleTs, token, signature: staleSig } };
+    await expect(
+      mailgunAdapter.parseWebhook({ headers: {}, body }, signedCreds),
+    ).rejects.toThrow("timestamp outside 15-minute window");
+  });
+
+  it("parses a delivered event", async () => {
+    const events = await mailgunAdapter.parseWebhook({ headers: {}, body: deliveredBody }, signedCreds);
     expect(events).toHaveLength(1);
     expect(events[0]!.status).toBe("delivered");
     expect(events[0]!.providerMessageId).toBe("20240101.abc@mg.example.com");
   });
 
   it("parses a failed event", async () => {
-    const body = {
-      ...deliveredBody,
-      "event-data": { ...deliveredBody["event-data"], event: "failed" },
-    };
-    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const body = { ...deliveredBody, "event-data": { ...deliveredBody["event-data"], event: "failed" } };
+    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, signedCreds);
     expect(events[0]!.status).toBe("failed");
   });
 
   it("parses an accepted event as sent", async () => {
-    const body = {
-      ...deliveredBody,
-      "event-data": { ...deliveredBody["event-data"], event: "accepted" },
-    };
-    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const body = { ...deliveredBody, "event-data": { ...deliveredBody["event-data"], event: "accepted" } };
+    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, signedCreds);
     expect(events[0]!.status).toBe("sent");
   });
 
   it("returns empty array for unhandled event types", async () => {
-    const body = {
-      ...deliveredBody,
-      "event-data": { ...deliveredBody["event-data"], event: "opened" },
-    };
-    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    const body = { ...deliveredBody, "event-data": { ...deliveredBody["event-data"], event: "opened" } };
+    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, signedCreds);
     expect(events).toHaveLength(0);
   });
 
   it("returns empty array when event-data is missing", async () => {
-    const events = await mailgunAdapter.parseWebhook(
-      { headers: {}, body: { signature: {} } },
-      { config: {}, secret },
-    );
+    const body = { signature: deliveredBody.signature };
+    const events = await mailgunAdapter.parseWebhook({ headers: {}, body }, signedCreds);
     expect(events).toHaveLength(0);
-  });
-
-  it("throws when signature is wrong", async () => {
-    await expect(
-      mailgunAdapter.parseWebhook(
-        { headers: {}, body: deliveredBody },
-        { config: { webhookSigningKey: "secret-key" }, secret },
-      ),
-    ).rejects.toThrow("signature verification failed");
-  });
-
-  it("passes when signature is correct", async () => {
-    const { createHmac } = await import("node:crypto");
-    const signingKey = "test-webhook-key";
-    const timestamp = "1529006854";
-    const token = "validtoken";
-    const correctSig = createHmac("sha256", signingKey).update(timestamp + token).digest("hex");
-    const body = {
-      signature: { timestamp, token, signature: correctSig },
-      "event-data": {
-        event: "delivered",
-        message: { headers: { "message-id": "<abc>" } },
-      },
-    };
-    const events = await mailgunAdapter.parseWebhook(
-      { headers: {}, body },
-      { config: { webhookSigningKey: signingKey }, secret },
-    );
-    expect(events).toHaveLength(1);
   });
 });

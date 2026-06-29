@@ -26,4 +26,12 @@ worker.on("failed", (job, err) => {
   logger.error({ jobId: job?.id, messageId: job?.data.messageId, err }, "send job failed");
 });
 
+process.on("SIGTERM", async () => {
+  logger.info("[worker] SIGTERM received, draining and shutting down");
+  await worker.close();
+  await connection.quit();
+  logger.info("[worker] shutdown complete");
+  process.exit(0);
+});
+
 logger.info(`[worker] consuming queue '${SEND_QUEUE}' (concurrency=10)`);

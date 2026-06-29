@@ -46,7 +46,7 @@ export const metaAdapter: ChannelAdapter = {
     try {
       res = await fetch(
         `${GRAPH_URL}/${phoneNumberId}?fields=id,display_phone_number,verified_name`,
-        { headers: bearer(token) },
+        { headers: bearer(token), signal: AbortSignal.timeout(10_000) },
       );
     } catch (err) {
       return { ok: false, detail: `network error: ${String(err)}` };
@@ -77,6 +77,7 @@ export const metaAdapter: ChannelAdapter = {
           type: "text",
           text: { body: msg.body ?? "" },
         }),
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
       throw new Error(`Meta network error: ${String(err)}`);
@@ -94,19 +95,23 @@ export const metaAdapter: ChannelAdapter = {
   },
 
   async parseWebhook(req: RawWebhook, creds: ResolvedCreds): Promise<DeliveryEvent[]> {
-    // Verify X-Hub-Signature-256 when appSecret is configured.
+    // Require X-Hub-Signature-256 verification — reject if appSecret is not configured.
     const appSecret = typeof creds.config.appSecret === "string" ? creds.config.appSecret : null;
-    if (appSecret && req.rawBody) {
-      const sigHeader = req.headers["x-hub-signature-256"];
-      const sigRaw = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
-      const signature = String(sigRaw ?? "").replace(/^sha256=/, "");
-      const expected = createHmac("sha256", appSecret).update(req.rawBody).digest("hex");
-      if (
-        expected.length !== signature.length ||
-        !timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(signature, "utf8"))
-      ) {
-        throw new Error("Meta webhook signature verification failed");
-      }
+    if (!appSecret) {
+      throw new Error("Meta webhook rejected: appSecret is not configured on this credential");
+    }
+    if (!req.rawBody) {
+      throw new Error("Meta webhook rejected: raw body unavailable for signature verification");
+    }
+    const sigHeader = req.headers["x-hub-signature-256"];
+    const sigRaw = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+    const signature = String(sigRaw ?? "").replace(/^sha256=/, "");
+    const expected = createHmac("sha256", appSecret).update(req.rawBody).digest("hex");
+    if (
+      expected.length !== signature.length ||
+      !timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(signature, "utf8"))
+    ) {
+      throw new Error("Meta webhook signature verification failed");
     }
 
     const body = req.body as Record<string, unknown>;

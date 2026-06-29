@@ -51,4 +51,12 @@ jobs:
         run: pnpm turbo run test
         env:
           DATABASE_URL: postgresql://qalisa:qalisa@localhost:5432/qalisa_test
+          TEST_DATABASE_URL: postgresql://qalisa:qalisa@localhost:5432/qalisa_test
           VAULT_MASTER_KEY: ${{ secrets.VAULT_MASTER_KEY }}
+
+      - name: Verify Phase 1 (end-to-end smoke test)
+        run: node node_modules/tsx/dist/cli.mjs apps/engine/scripts/verify-phase1.ts
+        env:
+          DATABASE_URL: postgresql://qalisa:qalisa@localhost:5432/qalisa_test
+          VAULT_MASTER_KEY: ${{ secrets.VAULT_MASTER_KEY }}
+          ADMIN_API_TOKEN: ci-admin-token-for-testing-only

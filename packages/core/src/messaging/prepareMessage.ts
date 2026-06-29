@@ -121,8 +121,32 @@ export async function prepareMessage(
       status: "queued",
       idempotencyKey: idempotencyKey ?? null,
     })
+    .onConflictDoNothing()
     .returning({ id: messages.id });
-  if (!msg) throw new Error("Failed to create message record");
+
+  if (!msg) {
+    // Concurrent insert with same idempotency key — fetch the winner's record.
+    if (idempotencyKey) {
+      const [existing] = await db
+        .select({ id: messages.id, channel: messages.channel, provider: messages.provider })
+        .from(messages)
+        .where(and(eq(messages.tenantId, tenantId), eq(messages.idempotencyKey, idempotencyKey)))
+        .limit(1);
+      if (existing) {
+        return {
+          status: "queued",
+          messageId: existing.id,
+          channel: existing.channel,
+          provider: existing.provider,
+          credentialId: "",
+          to,
+          subject,
+          resolvedBody: body ?? "",
+        };
+      }
+    }
+    throw new Error("Failed to create message record");
+  }
   const messageId = msg.id;
 
   let resolvedBody = body ?? "";

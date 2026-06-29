@@ -1,7 +1,7 @@
 import type { DeliveryEvent } from "@qalisa/adapters";
 import type { Db } from "@qalisa/db";
 import { messages } from "@qalisa/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 
 /** Apply a normalised delivery event from a provider webhook to the message record. */
 export async function updateDelivery(
@@ -21,6 +21,7 @@ export async function updateDelivery(
       and(
         eq(messages.tenantId, tenantId),
         eq(messages.providerMessageId, event.providerMessageId),
+        notInArray(messages.status, ["delivered", "failed"]),
       ),
     );
 }

@@ -3,7 +3,14 @@ import { createServer } from "./server";
 
 const app = createServer();
 
-app.listen(env.ENGINE_PORT, env.ENGINE_HOST, () => {
-  // Structured logging (pino) arrives in Phase 1; a single boot line is fine here.
+const server = app.listen(env.ENGINE_PORT, env.ENGINE_HOST, () => {
   console.log(`[engine] listening on http://${env.ENGINE_HOST}:${env.ENGINE_PORT}`);
+});
+
+process.on("SIGTERM", () => {
+  console.log("[engine] SIGTERM received, shutting down");
+  server.close(() => {
+    console.log("[engine] HTTP server closed");
+    process.exit(0);
+  });
 });

@@ -19,6 +19,7 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ClientId: clientId, ClientSecret: clientSecret }),
+      signal: AbortSignal.timeout(10_000),
     });
   } catch (err) {
     throw new Error(`SMSPortal network error: ${String(err)}`);
@@ -74,6 +75,7 @@ export const smsportalAdapter: ChannelAdapter = {
         body: JSON.stringify({
           messages: [{ destination: msg.to, content: msg.body ?? "" }],
         }),
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
       throw new Error(`SMSPortal network error: ${String(err)}`);

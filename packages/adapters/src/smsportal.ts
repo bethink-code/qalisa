@@ -95,19 +95,20 @@ export const smsportalAdapter: ChannelAdapter = {
       throw new Error(`SMSPortal send failed (${res.status}): ${body}`);
     }
 
-    const data = (await res.json()) as {
-      errors?: { messageId?: string; error?: string }[];
-      messages?: { messageId?: string }[];
-    };
+    const raw = (await res.json()) as Record<string, unknown>;
+    // Temporary: log actual response to diagnose messageId field name/casing
+    console.log("[smsportal] BulkMessages response:", JSON.stringify(raw));
 
-    if (data.errors?.length) {
-      const first = data.errors[0];
-      throw new Error(`SMSPortal rejected message: ${first?.error ?? "unknown error"}`);
+    // SMSPortal API may use camelCase or PascalCase keys depending on version.
+    const errorsList = (Array.isArray(raw["errors"]) ? raw["errors"] : Array.isArray(raw["Errors"]) ? raw["Errors"] : []) as Record<string, unknown>[];
+    const messagesList = (Array.isArray(raw["messages"]) ? raw["messages"] : Array.isArray(raw["Messages"]) ? raw["Messages"] : []) as Record<string, unknown>[];
+
+    if (errorsList.length) {
+      const first = errorsList[0];
+      throw new Error(`SMSPortal rejected message: ${first?.["error"] ?? first?.["Error"] ?? "unknown error"}`);
     }
 
-    // SMSPortal may omit messageId in some account states (trial, etc.).
-    // The send succeeded (HTTP 200, empty errors) — don't retry a successful send.
-    const providerMessageId = data.messages?.[0]?.messageId ?? "";
+    const providerMessageId = String(messagesList[0]?.["messageId"] ?? messagesList[0]?.["MessageId"] ?? "");
     return { providerMessageId };
   },
 

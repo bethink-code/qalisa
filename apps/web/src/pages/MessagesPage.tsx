@@ -19,14 +19,40 @@ const CHANNEL_LABELS: Record<string, string> = { email: "Email", sms: "SMS", wha
 
 type Channel = "email" | "sms" | "whatsapp";
 
+const COUNTRY_CODES = [
+  { code: "+27", label: "🇿🇦 +27 South Africa" },
+  { code: "+1",  label: "🇺🇸 +1 USA / Canada" },
+  { code: "+44", label: "🇬🇧 +44 United Kingdom" },
+  { code: "+61", label: "🇦🇺 +61 Australia" },
+  { code: "+64", label: "🇳🇿 +64 New Zealand" },
+  { code: "+49", label: "🇩🇪 +49 Germany" },
+  { code: "+33", label: "🇫🇷 +33 France" },
+  { code: "+31", label: "🇳🇱 +31 Netherlands" },
+  { code: "+254", label: "🇰🇪 +254 Kenya" },
+  { code: "+234", label: "🇳🇬 +234 Nigeria" },
+  { code: "+233", label: "🇬🇭 +233 Ghana" },
+  { code: "+255", label: "🇹🇿 +255 Tanzania" },
+  { code: "+256", label: "🇺🇬 +256 Uganda" },
+  { code: "+260", label: "🇿🇲 +260 Zambia" },
+  { code: "+263", label: "🇿🇼 +263 Zimbabwe" },
+  { code: "+267", label: "🇧🇼 +267 Botswana" },
+  { code: "+264", label: "🇳🇦 +264 Namibia" },
+  { code: "+91", label: "🇮🇳 +91 India" },
+  { code: "+65", label: "🇸🇬 +65 Singapore" },
+  { code: "+971", label: "🇦🇪 +971 UAE" },
+];
+
 function SendForm({ onSent }: { onSent: () => void }) {
   const [channel, setChannel] = useState<Channel>("sms");
-  const [to, setTo] = useState("");
+  const [countryCode, setCountryCode] = useState("+27");
+  const [number, setNumber] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState("");
   const [error, setError] = useState("");
+
+  const to = channel === "email" ? number : `${countryCode}${number.replace(/^0/, "")}`;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,7 +67,7 @@ function SendForm({ onSent }: { onSent: () => void }) {
         body,
       });
       setSent(r.messageId);
-      setTo("");
+      setNumber("");
       setSubject("");
       setBody("");
       onSent();
@@ -73,17 +99,40 @@ function SendForm({ onSent }: { onSent: () => void }) {
             </select>
           </div>
           <div className="field">
-            <label htmlFor="send-to">
-              {channel === "sms" ? "Phone number" : channel === "whatsapp" ? "WhatsApp number" : "Email address"}
+            <label htmlFor="send-number">
+              {channel === "email" ? "Email address" : "Phone number"}
             </label>
-            <input
-              id="send-to"
-              className="input"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder={channel === "email" ? "you@example.com" : "+27821234567"}
-              required
-            />
+            {channel !== "email" ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <select
+                  className="select"
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  style={{ width: 220, flexShrink: 0 }}
+                >
+                  {COUNTRY_CODES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </select>
+                <input
+                  id="send-number"
+                  className="input"
+                  value={number}
+                  onChange={(e) => setNumber(e.target.value)}
+                  placeholder="831234567"
+                  required
+                />
+              </div>
+            ) : (
+              <input
+                id="send-number"
+                className="input"
+                value={number}
+                onChange={(e) => setNumber(e.target.value)}
+                placeholder="you@example.com"
+                required
+              />
+            )}
           </div>
         </div>
         {channel === "email" && (

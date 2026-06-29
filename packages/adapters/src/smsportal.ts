@@ -105,8 +105,9 @@ export const smsportalAdapter: ChannelAdapter = {
       throw new Error(`SMSPortal rejected message: ${first?.error ?? "unknown error"}`);
     }
 
+    // SMSPortal may omit messageId in some account states (trial, etc.).
+    // The send succeeded (HTTP 200, empty errors) — don't retry a successful send.
     const providerMessageId = data.messages?.[0]?.messageId ?? "";
-    if (!providerMessageId) throw new Error("SMSPortal returned no messageId");
     return { providerMessageId };
   },
 

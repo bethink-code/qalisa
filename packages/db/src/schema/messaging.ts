@@ -14,6 +14,7 @@ export const messages = pgTable(
     channel: channelEnum().notNull(),
     provider: providerEnum().notNull(),
     to: text().notNull(),
+    body: text(),
     templateId: uuid().references(() => templates.id),
     status: messageStatusEnum().notNull().default("queued"),
     providerMessageId: text(),

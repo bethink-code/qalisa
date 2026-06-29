@@ -117,6 +117,7 @@ export async function prepareMessage(
       channel,
       provider: cred.provider,
       to,
+      body: body ?? null,
       templateId: templateId ?? null,
       status: "queued",
       idempotencyKey: idempotencyKey ?? null,

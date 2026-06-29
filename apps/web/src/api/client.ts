@@ -74,6 +74,7 @@ export interface Message {
   channel: "email" | "sms" | "whatsapp";
   provider: "mailgun" | "smsportal" | "meta_cloud_api";
   to: string;
+  body: string;
   status: "queued" | "sent" | "delivered" | "failed";
   providerMessageId: string | null;
   error: string | null;

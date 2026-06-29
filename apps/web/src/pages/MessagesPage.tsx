@@ -179,17 +179,28 @@ export function MessagesPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<string>("all");
 
-  function loadMessages(showLoader = true) {
-    if (showLoader) setLoading(true);
+  function loadMessages() {
+    setLoading(true);
     api.messages.list()
       .then(setMessages)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load"))
-      .finally(() => { if (showLoader) setLoading(false); });
+      .finally(() => setLoading(false));
+  }
+
+  function pollStatuses() {
+    api.messages.list()
+      .then((fresh) => setMessages((prev) =>
+        prev.map((m) => {
+          const updated = fresh.find((f) => f.id === m.id);
+          return updated ? { ...m, status: updated.status, providerMessageId: updated.providerMessageId, sentAt: updated.sentAt, deliveredAt: updated.deliveredAt } : m;
+        })
+      ))
+      .catch(() => { /* silent — don't surface poll errors */ });
   }
 
   useEffect(() => {
     loadMessages();
-    const id = setInterval(() => loadMessages(false), 5000);
+    const id = setInterval(pollStatuses, 5000);
     return () => clearInterval(id);
   }, []);
 
@@ -237,8 +248,8 @@ export function MessagesPage() {
                 <tr>
                   <th>Channel</th>
                   <th>To</th>
+                  <th>Message</th>
                   <th>Status</th>
-                  <th>Provider ID</th>
                   <th>Sent</th>
                   <th>Delivered</th>
                 </tr>
@@ -248,6 +259,12 @@ export function MessagesPage() {
                   <tr key={m.id}>
                     <td><span className="pill muted">{CHANNEL_LABELS[m.channel] ?? m.channel}</span></td>
                     <td style={{ fontFamily: "monospace", fontSize: 13 }}>{m.to}</td>
+                    <td
+                      style={{ fontSize: 13, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      title={m.body}
+                    >
+                      {m.body}
+                    </td>
                     <td>
                       <span className={statusPillClass(m.status)}>{m.status}</span>
                       {m.error && (
@@ -258,12 +275,6 @@ export function MessagesPage() {
                           ⚠
                         </span>
                       )}
-                    </td>
-                    <td
-                      style={{ fontFamily: "monospace", fontSize: 12, color: "var(--graphite)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}
-                      title={m.providerMessageId ?? ""}
-                    >
-                      {m.providerMessageId ?? "—"}
                     </td>
                     <td style={{ color: "var(--graphite)", fontSize: 13 }}>{fmtDate(m.sentAt)}</td>
                     <td style={{ color: "var(--graphite)", fontSize: 13 }}>{fmtDate(m.deliveredAt)}</td>

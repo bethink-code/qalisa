@@ -76,6 +76,7 @@ messagesRouter.get(
         channel: messages.channel,
         provider: messages.provider,
         to: messages.to,
+        body: messages.body,
         status: messages.status,
         providerMessageId: messages.providerMessageId,
         error: messages.error,

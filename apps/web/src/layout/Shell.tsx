@@ -4,11 +4,11 @@ import { api, clearApiKey } from "../api/client";
 
 const STATIC_TOP = [
   { to: "/dashboard", label: "Dashboard" },
-  { to: "/credentials", label: "Credentials" },
 ];
 
 const STATIC_BOTTOM = [
   { to: "/templates", label: "Templates" },
+  { to: "/credentials", label: "Credentials" },
 ];
 
 const CHANNEL_NAV = [

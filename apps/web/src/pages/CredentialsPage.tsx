@@ -3,6 +3,14 @@ import { type Credential, api, engineBaseUrl } from "../api/client";
 
 type Channel = "email" | "sms" | "whatsapp";
 
+const CHANNEL_LABELS: Record<Channel, string> = {
+  email: "Email",
+  sms: "SMS",
+  whatsapp: "WhatsApp",
+};
+
+const CHANNELS: Channel[] = ["email", "sms", "whatsapp"];
+
 interface FieldMeta {
   key: string;
   label: string;
@@ -22,7 +30,7 @@ interface WebhookStep {
 
 const PROVIDERS: {
   channel: Channel;
-  label: string;
+  providerLabel: string;
   provider: string;
   webhookPath: string;
   webhookSteps: WebhookStep[];
@@ -32,7 +40,7 @@ const PROVIDERS: {
 }[] = [
   {
     channel: "email",
-    label: "Email — Mailjet",
+    providerLabel: "Mailjet",
     provider: "mailjet",
     webhookPath: "mailjet",
     webhookSteps: [
@@ -57,7 +65,7 @@ const PROVIDERS: {
   },
   {
     channel: "email",
-    label: "Email — Mailgun",
+    providerLabel: "Mailgun",
     provider: "mailgun",
     webhookPath: "mailgun",
     webhookSteps: [
@@ -84,7 +92,7 @@ const PROVIDERS: {
   },
   {
     channel: "sms",
-    label: "SMS — SMSPortal",
+    providerLabel: "SMSPortal",
     provider: "smsportal",
     webhookPath: "smsportal",
     webhookSteps: [
@@ -113,7 +121,7 @@ const PROVIDERS: {
   },
   {
     channel: "whatsapp",
-    label: "WhatsApp — Meta Cloud API",
+    providerLabel: "Meta Cloud API",
     provider: "meta_cloud_api",
     webhookPath: "meta",
     webhookSteps: [
@@ -345,70 +353,82 @@ export function CredentialsPage() {
       {loading ? (
         <div className="empty-state">Loading…</div>
       ) : (
-        PROVIDERS.map(({ channel, label, provider, webhookPath, webhookSteps, setupSteps, configFields, secretLabel }) => {
-          const existing = creds.find((c) => c.channel === channel && c.provider === provider);
-          const isAdding = adding === provider;
-          const webhookUrl = tenantId
-            ? `${engineBaseUrl()}/v1/webhooks/${webhookPath}/${tenantId}`
-            : "";
+        CHANNELS.map((channel) => {
+          const channelProviders = PROVIDERS.filter((p) => p.channel === channel);
 
           return (
-            <div key={provider} className="panel">
+            <div key={channel} className="panel">
               <div className="panel-head">
-                <span className="panel-title">{label}</span>
-                {!existing && !isAdding && (
-                  <button className="btn sm" onClick={() => setAdding(provider)}>Add</button>
-                )}
+                <span className="panel-title">{CHANNEL_LABELS[channel]}</span>
               </div>
 
-              {existing ? (
-                <>
-                  <div className="panel-body tight">
-                    <div className="cred-card">
-                      <div className="cred-info">
-                        <div className="cred-name">
-                          {String(existing.config.fromAddress ?? existing.config.domain ?? existing.config.clientId ?? existing.config.phoneNumberId ?? "—")}
-                        </div>
-                        <div className="cred-meta">
-                          {statusPill(existing.status)}
-                          {testResult[existing.id] && (
-                            <span style={{ marginLeft: 10, fontSize: 12, color: "var(--graphite)" }}>
-                              {testResult[existing.id]!.detail}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="cred-actions">
-                        <button
-                          className="btn sm"
-                          onClick={() => testCred(existing.id)}
-                          disabled={testing === existing.id}
-                        >
-                          {testing === existing.id ? "Testing…" : "Test"}
-                        </button>
-                        <button className="btn sm danger" onClick={() => deleteCred(existing.id)}>
-                          Delete
-                        </button>
-                      </div>
+              {channelProviders.map(({ providerLabel, provider, webhookPath, webhookSteps, setupSteps, configFields, secretLabel }, idx) => {
+                const existing = creds.find((c) => c.channel === channel && c.provider === provider);
+                const isAdding = adding === provider;
+                const webhookUrl = tenantId
+                  ? `${engineBaseUrl()}/v1/webhooks/${webhookPath}/${tenantId}`
+                  : "";
+
+                return (
+                  <div key={provider} style={idx > 0 ? { borderTop: "1px solid var(--hairline)" } : {}}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px" }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{providerLabel}</span>
+                      {!existing && !isAdding && (
+                        <button className="btn sm" onClick={() => setAdding(provider)}>Add</button>
+                      )}
                     </div>
+
+                    {existing ? (
+                      <>
+                        <div className="panel-body tight" style={{ paddingTop: 0 }}>
+                          <div className="cred-card">
+                            <div className="cred-info">
+                              <div className="cred-name">
+                                {String(existing.config.fromAddress ?? existing.config.domain ?? existing.config.clientId ?? existing.config.phoneNumberId ?? "—")}
+                              </div>
+                              <div className="cred-meta">
+                                {statusPill(existing.status)}
+                                {testResult[existing.id] && (
+                                  <span style={{ marginLeft: 10, fontSize: 12, color: "var(--graphite)" }}>
+                                    {testResult[existing.id]!.detail}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="cred-actions">
+                              <button
+                                className="btn sm"
+                                onClick={() => testCred(existing.id)}
+                                disabled={testing === existing.id}
+                              >
+                                {testing === existing.id ? "Testing…" : "Test"}
+                              </button>
+                              <button className="btn sm danger" onClick={() => deleteCred(existing.id)}>
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        {webhookUrl && <WebhookUrlBox url={webhookUrl} steps={webhookSteps} />}
+                      </>
+                    ) : isAdding ? (
+                      <AddForm
+                        channel={channel}
+                        provider={provider}
+                        setupSteps={setupSteps}
+                        configFields={configFields}
+                        secretLabel={secretLabel}
+                        onSaved={() => { setAdding(null); reload(); }}
+                        onCancel={() => setAdding(null)}
+                      />
+                    ) : (
+                      <div style={{ padding: "0 20px 16px", fontSize: 13, color: "var(--graphite)" }}>
+                        No credential configured.
+                      </div>
+                    )}
                   </div>
-                  {webhookUrl && <WebhookUrlBox url={webhookUrl} steps={webhookSteps} />}
-                </>
-              ) : isAdding ? (
-                <AddForm
-                  channel={channel}
-                  provider={provider}
-                  setupSteps={setupSteps}
-                  configFields={configFields}
-                  secretLabel={secretLabel}
-                  onSaved={() => { setAdding(null); reload(); }}
-                  onCancel={() => setAdding(null)}
-                />
-              ) : (
-                <div className="empty-state" style={{ padding: "20px 24px", textAlign: "left" }}>
-                  No credential configured.
-                </div>
-              )}
+                );
+              })}
             </div>
           );
         })

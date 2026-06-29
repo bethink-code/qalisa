@@ -16,6 +16,7 @@ async function handleProviderWebhook(
   channel: Channel,
   provider: Provider,
   req: { headers: Record<string, string | string[] | undefined>; body: unknown; rawBody?: Buffer },
+  webhookSecret?: string,
 ): Promise<number> {
   const [cred] = await db
     .select()
@@ -29,6 +30,14 @@ async function handleProviderWebhook(
     )
     .limit(1);
   if (!cred) throw Object.assign(new Error(`No ${provider} credential found for tenant`), { statusCode: 404 });
+
+  // Verify path secret for providers that don't sign their callbacks.
+  if (webhookSecret !== undefined) {
+    const stored = typeof cred.config?.webhookSecret === "string" ? cred.config.webhookSecret : null;
+    if (!stored || webhookSecret !== stored) {
+      throw Object.assign(new Error("Invalid webhook secret"), { statusCode: 403 });
+    }
+  }
 
   const adapter = getAdapter(channel, provider);
   const secret = await vault.resolveSecret(cred.secretRef, tenantId);
@@ -72,15 +81,15 @@ webhooksRouter.post(
 );
 
 /**
- * POST /v1/webhooks/mailjet/:tenantId
+ * POST /v1/webhooks/mailjet/:tenantId/:secret
  *
  * Mailjet Event API callback. Mailjet does not sign callbacks; the
- * tenantId-scoped URL path is the only authentication mechanism.
+ * :secret path segment (stored in credential config) is the auth gate.
  */
 webhooksRouter.post(
-  "/mailjet/:tenantId",
+  "/mailjet/:tenantId/:secret",
   asyncHandler(async (req, res) => {
-    const { tenantId } = req.params;
+    const { tenantId, secret } = req.params;
     if (!tenantId) { res.status(400).json({ error: "Missing tenantId" }); return; }
 
     try {
@@ -88,7 +97,7 @@ webhooksRouter.post(
         headers: req.headers as Record<string, string | string[] | undefined>,
         body: req.body,
         rawBody: req.rawBody,
-      });
+      }, secret);
       res.status(200).json({ processed });
     } catch (err) {
       const code = (err as { statusCode?: number }).statusCode;
@@ -98,15 +107,15 @@ webhooksRouter.post(
 );
 
 /**
- * POST /v1/webhooks/smsportal/:tenantId
+ * POST /v1/webhooks/smsportal/:tenantId/:secret
  *
- * SMSPortal delivery receipt callback. SMSPortal does not sign callbacks, so
- * the tenantId-scoped URL path is the only authentication mechanism.
+ * SMSPortal delivery receipt callback. SMSPortal does not sign callbacks; the
+ * :secret path segment (stored in credential config) is the auth gate.
  */
 webhooksRouter.post(
-  "/smsportal/:tenantId",
+  "/smsportal/:tenantId/:secret",
   asyncHandler(async (req, res) => {
-    const { tenantId } = req.params;
+    const { tenantId, secret } = req.params;
     if (!tenantId) { res.status(400).json({ error: "Missing tenantId" }); return; }
 
     try {
@@ -114,7 +123,7 @@ webhooksRouter.post(
         headers: req.headers as Record<string, string | string[] | undefined>,
         body: req.body,
         rawBody: req.rawBody,
-      });
+      }, secret);
       res.status(200).json({ processed });
     } catch (err) {
       const code = (err as { statusCode?: number }).statusCode;

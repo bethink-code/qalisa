@@ -31,12 +31,16 @@ tenantsRouter.post(
       return;
     }
     const [tenant] = await db
-      .select({ id: tenants.id })
+      .select({ id: tenants.id, status: tenants.status })
       .from(tenants)
       .where(eq(tenants.id, tenantId))
       .limit(1);
     if (!tenant) {
       res.status(404).json({ error: "Tenant not found" });
+      return;
+    }
+    if (tenant.status !== "active") {
+      res.status(403).json({ error: "API keys can only be issued to active tenants" });
       return;
     }
 

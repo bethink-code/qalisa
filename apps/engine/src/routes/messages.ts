@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { requireScope } from "../middleware/requireScope";
 import { sendQueue } from "../queue";
 
 export const messagesRouter: Router = Router();
@@ -28,6 +29,7 @@ const sendRequestSchema = z
 // Returns 202 Accepted with { messageId, status: "queued" }.
 messagesRouter.post(
   "/",
+  requireScope("messages:send"),
   asyncHandler(async (req, res) => {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
@@ -38,17 +40,21 @@ messagesRouter.post(
       return;
     }
 
+    const rateLimitPerMinute = process.env.RATE_LIMIT_PER_TENANT_PER_MINUTE
+      ? parseInt(process.env.RATE_LIMIT_PER_TENANT_PER_MINUTE, 10)
+      : undefined;
+
     try {
-      const prep = await prepareMessage(tenantId, parsed.data, { db });
+      const prep = await prepareMessage(tenantId, parsed.data, { db, rateLimitPerMinute });
 
       if (prep.status === "failed") {
         res.status(200).json({ messageId: prep.messageId, status: "failed", error: prep.error });
         return;
       }
 
-      // Already processed via idempotency (credentialId is empty sentinel).
+      // Idempotency hit — return the real status of the existing message.
       if (!prep.credentialId) {
-        res.status(200).json({ messageId: prep.messageId, status: "queued" });
+        res.status(200).json({ messageId: prep.messageId, status: prep.existingStatus ?? "queued" });
         return;
       }
 

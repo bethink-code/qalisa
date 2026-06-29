@@ -4,13 +4,16 @@ import {
   providerCredentials,
   suppressions,
   templates,
+  usageEvents,
 } from "@qalisa/db/schema";
 import type { Channel, MessageStatus, Provider } from "@qalisa/shared";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 import type { SendInput } from "./sendMessage";
 
 export interface PrepareReady {
   status: "queued";
+  /** Real status of an existing message on an idempotency hit — absent for fresh messages. */
+  existingStatus?: MessageStatus;
   messageId: string;
   channel: Channel;
   provider: Provider;
@@ -30,16 +33,16 @@ export type PrepareResult = PrepareReady | PrepareFailed;
 
 /**
  * Pre-flight for an outbound message: idempotency guard → credential lookup →
- * suppression check → message record (queued) → template resolution.
+ * suppression check → rate-limit check → message record (queued) → template resolution.
  *
  * Throws (with statusCode) for precondition failures where no record is created
- * (no healthy credential, recipient suppressed). Returns a PrepareFailed for
- * record-exists failures (template not found) so callers get a messageId back.
+ * (no healthy credential, recipient suppressed, rate limit exceeded). Returns a
+ * PrepareFailed for record-exists failures (template not found) so callers get a messageId back.
  */
 export async function prepareMessage(
   tenantId: string,
   input: SendInput,
-  deps: { db: Db },
+  deps: { db: Db; rateLimitPerMinute?: number },
 ): Promise<PrepareResult> {
   const { db } = deps;
   const { channel, to, subject, body, templateId, variables, idempotencyKey } = input;
@@ -52,7 +55,6 @@ export async function prepareMessage(
         status: messages.status,
         channel: messages.channel,
         provider: messages.provider,
-        error: messages.error,
       })
       .from(messages)
       .where(
@@ -60,9 +62,9 @@ export async function prepareMessage(
       )
       .limit(1);
     if (existing) {
-      // Re-surface as a ready result so the caller can re-enqueue or re-dispatch.
       return {
         status: "queued",
+        existingStatus: existing.status,
         messageId: existing.id,
         channel: existing.channel,
         provider: existing.provider,
@@ -74,6 +76,7 @@ export async function prepareMessage(
     }
   }
 
+  // Deterministic credential pick: oldest-first gives stable primary/fallback behaviour.
   const [cred] = await db
     .select({ id: providerCredentials.id, provider: providerCredentials.provider })
     .from(providerCredentials)
@@ -84,6 +87,7 @@ export async function prepareMessage(
         eq(providerCredentials.status, "healthy"),
       ),
     )
+    .orderBy(asc(providerCredentials.createdAt))
     .limit(1);
   if (!cred) {
     throw Object.assign(
@@ -110,6 +114,21 @@ export async function prepareMessage(
     );
   }
 
+  // Rolling rate limit — only checked when a limit is configured.
+  if (deps.rateLimitPerMinute) {
+    const oneMinuteAgo = new Date(Date.now() - 60_000);
+    const [usage] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(usageEvents)
+      .where(and(eq(usageEvents.tenantId, tenantId), gte(usageEvents.createdAt, oneMinuteAgo)));
+    if ((usage?.count ?? 0) >= deps.rateLimitPerMinute) {
+      throw Object.assign(
+        new Error(`Rate limit exceeded: ${deps.rateLimitPerMinute} messages per minute`),
+        { statusCode: 429 },
+      );
+    }
+  }
+
   const [msg] = await db
     .insert(messages)
     .values({
@@ -129,13 +148,14 @@ export async function prepareMessage(
     // Concurrent insert with same idempotency key — fetch the winner's record.
     if (idempotencyKey) {
       const [existing] = await db
-        .select({ id: messages.id, channel: messages.channel, provider: messages.provider })
+        .select({ id: messages.id, status: messages.status, channel: messages.channel, provider: messages.provider })
         .from(messages)
         .where(and(eq(messages.tenantId, tenantId), eq(messages.idempotencyKey, idempotencyKey)))
         .limit(1);
       if (existing) {
         return {
           status: "queued",
+          existingStatus: existing.status,
           messageId: existing.id,
           channel: existing.channel,
           provider: existing.provider,

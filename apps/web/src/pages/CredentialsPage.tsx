@@ -365,8 +365,11 @@ export function CredentialsPage() {
               {channelProviders.map(({ providerLabel, provider, webhookPath, webhookSteps, setupSteps, configFields, secretLabel }, idx) => {
                 const existing = creds.find((c) => c.channel === channel && c.provider === provider);
                 const isAdding = adding === provider;
+                const webhookSecret = typeof existing?.config.webhookSecret === "string"
+                  ? existing.config.webhookSecret
+                  : null;
                 const webhookUrl = tenantId
-                  ? `${engineBaseUrl()}/v1/webhooks/${webhookPath}/${tenantId}`
+                  ? `${engineBaseUrl()}/v1/webhooks/${webhookPath}/${tenantId}${webhookSecret ? `/${webhookSecret}` : ""}`
                   : "";
 
                 return (

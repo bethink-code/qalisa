@@ -6,6 +6,8 @@ declare global {
       tenantId?: string;
       /** Id of the API key used (set by apiKeyAuth). */
       apiKeyId?: string;
+      /** Scopes granted by the API key (empty array = full access). */
+      scopes?: string[];
       /** True when the request passed admin-token auth (set by adminAuth). */
       isAdmin?: boolean;
       /** Raw request body bytes — captured by express.json verify for webhook signature checks. */

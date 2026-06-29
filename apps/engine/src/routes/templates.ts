@@ -1,5 +1,5 @@
 import { db, templates } from "@qalisa/db";
-import { createTemplateSchema, updateTemplateSchema } from "@qalisa/shared";
+import { CHANNELS, createTemplateSchema, updateTemplateSchema } from "@qalisa/shared";
 import { and, eq } from "drizzle-orm";
 import { Router } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -56,6 +56,10 @@ templatesRouter.get(
     if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
 
     const channelFilter = typeof req.query["channel"] === "string" ? req.query["channel"] : null;
+    if (channelFilter && !(CHANNELS as readonly string[]).includes(channelFilter)) {
+      res.status(400).json({ error: `Invalid channel '${channelFilter}'` });
+      return;
+    }
 
     const rows = await db
       .select(SAFE_COLUMNS)

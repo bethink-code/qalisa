@@ -36,6 +36,13 @@
       "when": 1782741167419,
       "tag": "0004_curved_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782742000000,
+      "tag": "0005_webhook_secrets",
+      "breakpoints": true
     }
   ]
 }

@@ -3,10 +3,14 @@ import { db, providerCredentials } from "@qalisa/db";
 import { PROVIDERS_BY_CHANNEL, upsertCredentialSchema } from "@qalisa/shared";
 import { and, eq } from "drizzle-orm";
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { vault } from "../services";
 
 export const credentialsRouter: Router = Router();
+
+/** Providers that don't sign webhook callbacks — authenticated via a secret in the URL path. */
+const WEBHOOK_SECRET_PROVIDERS = new Set<string>(["smsportal", "mailjet"]);
 
 /** Fields safe to return — never secretRef or tenantId. */
 const SAFE_COLUMNS = {
@@ -35,7 +39,8 @@ credentialsRouter.post(
       res.status(400).json({ error: "Invalid input", issues: parsed.error.issues });
       return;
     }
-    const { channel, provider, config, secret } = parsed.data;
+    const { channel, provider, secret } = parsed.data;
+    let { config } = parsed.data;
 
     const allowed: readonly string[] = PROVIDERS_BY_CHANNEL[channel];
     if (!allowed.includes(provider)) {
@@ -44,7 +49,7 @@ credentialsRouter.post(
     }
 
     const [existing] = await db
-      .select({ id: providerCredentials.id, secretRef: providerCredentials.secretRef })
+      .select({ id: providerCredentials.id, secretRef: providerCredentials.secretRef, config: providerCredentials.config })
       .from(providerCredentials)
       .where(
         and(
@@ -54,6 +59,18 @@ credentialsRouter.post(
         ),
       )
       .limit(1);
+
+    if (WEBHOOK_SECRET_PROVIDERS.has(provider)) {
+      if (existing) {
+        // Preserve the existing webhookSecret so the tenant's registered webhook URL stays valid.
+        const preserved = typeof existing.config?.webhookSecret === "string"
+          ? existing.config.webhookSecret
+          : randomUUID();
+        config = { ...config, webhookSecret: preserved };
+      } else {
+        config = { ...config, webhookSecret: randomUUID() };
+      }
+    }
 
     const secretRef = await vault.storeSecret(tenantId, secret);
 

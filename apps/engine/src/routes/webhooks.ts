@@ -83,6 +83,7 @@ webhooksRouter.post(
     const { tenantId } = req.params;
     if (!tenantId) { res.status(400).json({ error: "Missing tenantId" }); return; }
 
+    console.log("[smsportal webhook] body:", JSON.stringify(req.body));
     try {
       const processed = await handleProviderWebhook(tenantId, "sms", "smsportal", {
         headers: req.headers as Record<string, string | string[] | undefined>,

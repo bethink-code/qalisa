@@ -11,6 +11,15 @@ import type {
 
 const BASE_URL = "https://rest.smsportal.com/v1";
 
+/** Normalise to bare international digits (no + or leading 0). e.g. +27831234567, 0831234567, 831234567 → 27831234567 */
+function normaliseMsisdn(raw: string, defaultCountryCode = "27"): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00")) return digits.slice(2);
+  if (digits.startsWith("0")) return defaultCountryCode + digits.slice(1);
+  if (raw.startsWith("+")) return digits;
+  return digits;
+}
+
 /** Authenticate and return a short-lived JWT. */
 async function getToken(clientId: string, clientSecret: string): Promise<string> {
   const basicToken = btoa(`${clientId}:${clientSecret}`);
@@ -73,7 +82,7 @@ export const smsportalAdapter: ChannelAdapter = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [{ destination: msg.to.replace(/^\+/, ""), content: msg.body ?? "" }],
+          messages: [{ destination: normaliseMsisdn(msg.to), content: msg.body ?? "" }],
         }),
         signal: AbortSignal.timeout(15_000),
       });

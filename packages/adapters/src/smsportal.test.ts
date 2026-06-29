@@ -80,6 +80,20 @@ describe("send", () => {
     expect(body.messages[0]!.content).toBe("Test message");
   });
 
+  it.each([
+    ["+27831234567", "27831234567"],
+    ["0831234567",   "27831234567"],
+    ["27831234567",  "27831234567"],
+    ["831234567",    "831234567"],
+  ])("normalises %s → %s", async (input, expected) => {
+    mockFetch.mockResolvedValueOnce(authSuccess).mockResolvedValueOnce(sendSuccess);
+    await smsportalAdapter.send({ channel: "sms", to: input, body: "Hi" }, creds);
+    const body = JSON.parse(mockFetch.mock.calls[1]![1]!.body as string) as {
+      messages: { destination: string }[];
+    };
+    expect(body.messages[0]!.destination).toBe(expected);
+  });
+
   it("throws when auth fails", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     await expect(

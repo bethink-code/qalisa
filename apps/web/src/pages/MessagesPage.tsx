@@ -179,15 +179,19 @@ export function MessagesPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<string>("all");
 
-  function loadMessages() {
-    setLoading(true);
+  function loadMessages(showLoader = true) {
+    if (showLoader) setLoading(true);
     api.messages.list()
       .then(setMessages)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load"))
-      .finally(() => setLoading(false));
+      .finally(() => { if (showLoader) setLoading(false); });
   }
 
-  useEffect(loadMessages, []);
+  useEffect(() => {
+    loadMessages();
+    const id = setInterval(() => loadMessages(false), 5000);
+    return () => clearInterval(id);
+  }, []);
 
   const filtered = filter === "all" ? messages : messages.filter((m) => m.status === filter);
 

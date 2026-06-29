@@ -13,12 +13,12 @@ const BASE_URL = "https://rest.smsportal.com/v1";
 
 /** Authenticate and return a short-lived JWT. */
 async function getToken(clientId: string, clientSecret: string): Promise<string> {
+  const basicToken = btoa(`${clientId}:${clientSecret}`);
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}/Authentication`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ClientId: clientId, ClientSecret: clientSecret }),
+      method: "GET",
+      headers: { Authorization: `Basic ${basicToken}` },
       signal: AbortSignal.timeout(10_000),
     });
   } catch (err) {

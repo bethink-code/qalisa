@@ -182,4 +182,18 @@ describe("parseWebhook", () => {
     const events = await mailjetAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
     expect(events).toHaveLength(0);
   });
+
+  it("handles grouped array payload (Group events mode)", async () => {
+    const body = [
+      { event: "sent", CustomID: "uuid-1", MessageID: 100 },
+      { event: "open", CustomID: "uuid-2", MessageID: 101 },
+      { event: "bounce", CustomID: "uuid-3", MessageID: 102 },
+    ];
+    const events = await mailjetAdapter.parseWebhook({ headers: {}, body }, { config: {}, secret });
+    expect(events).toHaveLength(2);
+    expect(events[0]!.providerMessageId).toBe("uuid-1");
+    expect(events[0]!.status).toBe("delivered");
+    expect(events[1]!.providerMessageId).toBe("uuid-3");
+    expect(events[1]!.status).toBe("failed");
+  });
 });

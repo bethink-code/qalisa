@@ -99,24 +99,32 @@ export const mailjetAdapter: ChannelAdapter = {
   },
 
   async parseWebhook(req: RawWebhook): Promise<DeliveryEvent[]> {
-    // Mailjet sends one POST per event — flat JSON object, no signature verification.
+    // Mailjet sends either a single event object or an array when "Group events" is enabled.
     // CustomID = our internal messageId passed at send time (most reliable match).
     // MessageID = Mailjet's large integer ID (fallback).
     // "sent" = destination SMTP accepted the message = our "delivered".
     // "bounce" / "blocked" = our "failed".
-    const body = req.body as Record<string, unknown>;
-    const event = String(body["event"] ?? "");
-    const customId = body["CustomID"] ? String(body["CustomID"]) : "";
-    const messageId = body["MessageID"] != null ? String(body["MessageID"]) : "";
-    const providerMessageId = customId || messageId;
+    const raw = req.body;
+    const items: Record<string, unknown>[] = Array.isArray(raw)
+      ? (raw as Record<string, unknown>[])
+      : [raw as Record<string, unknown>];
 
-    if (!providerMessageId || !event) return [];
+    const results: DeliveryEvent[] = [];
+    for (const body of items) {
+      const event = String(body["event"] ?? "");
+      const customId = body["CustomID"] ? String(body["CustomID"]) : "";
+      const messageId = body["MessageID"] != null ? String(body["MessageID"]) : "";
+      const providerMessageId = customId || messageId;
 
-    let status: DeliveryEvent["status"] | null = null;
-    if (event === "sent") status = "delivered";
-    else if (event === "bounce" || event === "blocked") status = "failed";
+      if (!providerMessageId || !event) continue;
 
-    if (!status) return [];
-    return [{ providerMessageId, status, raw: body }];
+      let status: DeliveryEvent["status"] | null = null;
+      if (event === "sent") status = "delivered";
+      else if (event === "bounce" || event === "blocked") status = "failed";
+
+      if (!status) continue;
+      results.push({ providerMessageId, status, raw: body });
+    }
+    return results;
   },
 };

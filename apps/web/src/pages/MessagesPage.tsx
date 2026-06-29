@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type Message, api } from "../api/client";
 
 function statusPillClass(s: Message["status"]) {
@@ -16,6 +16,57 @@ function fmtDate(iso: string | null) {
 }
 
 const CHANNEL_LABELS: Record<string, string> = { email: "Email", sms: "SMS", whatsapp: "WhatsApp" };
+
+function MessageDrawer({ message, onClose }: { message: Message; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    function onOutside(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onOutside);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onOutside); };
+  }, [onClose]);
+
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.18)", zIndex: 100 }} />
+      <div ref={ref} style={{
+        position: "fixed", top: 0, right: 0, bottom: 0, width: 420,
+        background: "var(--surface)", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
+        zIndex: 101, display: "flex", flexDirection: "column", overflowY: "auto",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "1px solid var(--border)" }}>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>Message detail</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, lineHeight: 1, color: "var(--graphite)" }}>×</button>
+        </div>
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 20 }}>
+          <Field label="Status">
+            <span className={statusPillClass(message.status)}>{message.status}</span>
+            {message.error && <span style={{ marginLeft: 8, fontSize: 13, color: "var(--status-red)" }}>{message.error}</span>}
+          </Field>
+          <Field label="Channel"><span className="pill muted">{CHANNEL_LABELS[message.channel] ?? message.channel}</span></Field>
+          <Field label="To"><code style={{ fontSize: 13 }}>{message.to}</code></Field>
+          <Field label="Message">
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{message.body || "—"}</p>
+          </Field>
+          <Field label="Sent">{fmtDate(message.sentAt)}</Field>
+          <Field label="Delivered">{fmtDate(message.deliveredAt)}</Field>
+          <Field label="Message ID"><code style={{ fontSize: 11, wordBreak: "break-all", color: "var(--graphite)" }}>{message.id}</code></Field>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--graphite)", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 14 }}>{children}</div>
+    </div>
+  );
+}
 
 type Channel = "email" | "sms" | "whatsapp";
 
@@ -178,6 +229,7 @@ export function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<string>("all");
+  const [selected, setSelected] = useState<Message | null>(null);
 
   function loadMessages() {
     setLoading(true);
@@ -207,6 +259,7 @@ export function MessagesPage() {
   const filtered = filter === "all" ? messages : messages.filter((m) => m.status === filter);
 
   return (
+    <>
     <main className="page">
       <div className="page-head">
         <h1 className="page-title">Messages</h1>
@@ -256,25 +309,15 @@ export function MessagesPage() {
               </thead>
               <tbody>
                 {filtered.map((m) => (
-                  <tr key={m.id}>
+                  <tr key={m.id} onClick={() => setSelected(m)} style={{ cursor: "pointer" }}>
                     <td><span className="pill muted">{CHANNEL_LABELS[m.channel] ?? m.channel}</span></td>
                     <td style={{ fontFamily: "monospace", fontSize: 13 }}>{m.to}</td>
-                    <td
-                      style={{ fontSize: 13, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      title={m.body}
-                    >
+                    <td style={{ fontSize: 13, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {m.body}
                     </td>
                     <td>
                       <span className={statusPillClass(m.status)}>{m.status}</span>
-                      {m.error && (
-                        <span
-                          title={m.error}
-                          style={{ marginLeft: 6, fontSize: 12, color: "var(--status-red)", cursor: "help" }}
-                        >
-                          ⚠
-                        </span>
-                      )}
+                      {m.error && <span style={{ marginLeft: 6, fontSize: 12, color: "var(--status-red)" }}>⚠</span>}
                     </td>
                     <td style={{ color: "var(--graphite)", fontSize: 13 }}>{fmtDate(m.sentAt)}</td>
                     <td style={{ color: "var(--graphite)", fontSize: 13 }}>{fmtDate(m.deliveredAt)}</td>
@@ -286,5 +329,7 @@ export function MessagesPage() {
         </div>
       </div>
     </main>
+    {selected && <MessageDrawer message={selected} onClose={() => setSelected(null)} />}
+    </>
   );
 }

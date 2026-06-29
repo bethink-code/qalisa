@@ -23,6 +23,15 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6380:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -60,3 +69,4 @@ jobs:
           DATABASE_URL: postgresql://qalisa:qalisa@localhost:5432/qalisa_test
           VAULT_MASTER_KEY: ${{ secrets.VAULT_MASTER_KEY }}
           ADMIN_API_TOKEN: ci-admin-token-for-testing-only
+          REDIS_URL: redis://localhost:6380

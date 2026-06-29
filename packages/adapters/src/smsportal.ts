@@ -73,7 +73,7 @@ export const smsportalAdapter: ChannelAdapter = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [{ destination: msg.to, content: msg.body ?? "" }],
+          messages: [{ destination: msg.to.replace(/^\+/, ""), content: msg.body ?? "" }],
         }),
         signal: AbortSignal.timeout(15_000),
       });

@@ -76,7 +76,7 @@ describe("send", () => {
     const body = JSON.parse(sendCall![1]!.body as string) as {
       messages: { destination: string; content: string }[];
     };
-    expect(body.messages[0]!.destination).toBe("+27821234567");
+    expect(body.messages[0]!.destination).toBe("27821234567");
     expect(body.messages[0]!.content).toBe("Test message");
   });
 

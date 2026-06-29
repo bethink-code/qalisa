@@ -1,20 +1,40 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { clearApiKey } from "../api/client";
+import { api, clearApiKey } from "../api/client";
 
-const NAV = [
+const STATIC_TOP = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/credentials", label: "Credentials" },
-  { to: "/messages", label: "Messages" },
+];
+
+const STATIC_BOTTOM = [
   { to: "/templates", label: "Templates" },
+];
+
+const CHANNEL_NAV = [
+  { to: "/messages/sms", label: "SMS", channel: "sms" },
+  { to: "/messages/email", label: "Email", channel: "email" },
+  { to: "/messages/whatsapp", label: "WhatsApp", channel: "whatsapp" },
 ];
 
 export function Shell() {
   const navigate = useNavigate();
+  const [activeChannels, setActiveChannels] = useState<string[]>([]);
+
+  useEffect(() => {
+    api.credentials.list()
+      .then(creds =>
+        setActiveChannels([...new Set(creds.filter(c => c.status === "healthy").map(c => c.channel))])
+      )
+      .catch(() => {});
+  }, []);
 
   function signOut() {
     clearApiKey();
     navigate("/login");
   }
+
+  const activeChannelNav = CHANNEL_NAV.filter(c => activeChannels.includes(c.channel));
 
   return (
     <div className="shell">
@@ -24,12 +44,18 @@ export function Shell() {
       </header>
 
       <nav className="nav-tabs">
-        {NAV.map((n) => (
-          <NavLink
-            key={n.to}
-            to={n.to}
-            className={({ isActive }) => `nav-tab${isActive ? " active" : ""}`}
-          >
+        {STATIC_TOP.map(n => (
+          <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-tab${isActive ? " active" : ""}`}>
+            {n.label}
+          </NavLink>
+        ))}
+        {activeChannelNav.map(n => (
+          <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-tab${isActive ? " active" : ""}`}>
+            {n.label}
+          </NavLink>
+        ))}
+        {STATIC_BOTTOM.map(n => (
+          <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-tab${isActive ? " active" : ""}`}>
             {n.label}
           </NavLink>
         ))}

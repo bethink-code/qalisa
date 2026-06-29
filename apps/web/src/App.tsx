@@ -1,10 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { getApiKey } from "./api/client";
 import { Shell } from "./layout/Shell";
+import { ChannelMessagesPage } from "./pages/ChannelMessagesPage";
 import { CredentialsPage } from "./pages/CredentialsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
-import { MessagesPage } from "./pages/MessagesPage";
 import { TemplatesPage } from "./pages/TemplatesPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -26,7 +26,8 @@ export function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/credentials" element={<CredentialsPage />} />
-        <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/messages" element={<Navigate to="/messages/sms" replace />} />
+        <Route path="/messages/:channel" element={<ChannelMessagesPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
       </Route>
     </Routes>

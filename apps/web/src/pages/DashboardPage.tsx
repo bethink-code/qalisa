@@ -78,7 +78,7 @@ export function DashboardPage() {
           {loading && <div className="empty-state">Loading…</div>}
           {!loading && error && <div className="empty-state" style={{ color: "var(--status-red)" }}>{error}</div>}
           {!loading && !error && messages.length === 0 && (
-            <div className="empty-state">No messages yet. Send one via the API.</div>
+            <div className="empty-state">No messages yet. Go to Messages to send one.</div>
           )}
           {!loading && messages.length > 0 && (
             <table className="data-table">

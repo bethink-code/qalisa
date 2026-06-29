@@ -95,20 +95,20 @@ export const smsportalAdapter: ChannelAdapter = {
       throw new Error(`SMSPortal send failed (${res.status}): ${body}`);
     }
 
-    const raw = (await res.json()) as Record<string, unknown>;
-    // Temporary: log actual response to diagnose messageId field name/casing
-    console.log("[smsportal] BulkMessages response:", JSON.stringify(raw));
+    // Actual SMSPortal BulkMessages response shape:
+    // { cost, remainingBalance, eventId, messages: <count>, parts, errorReport: { faults: [] } }
+    // "messages" is a COUNT not an array; the batch reference is "eventId".
+    const raw = (await res.json()) as {
+      eventId?: number;
+      errorReport?: { faults?: unknown[] };
+    };
 
-    // SMSPortal API may use camelCase or PascalCase keys depending on version.
-    const errorsList = (Array.isArray(raw["errors"]) ? raw["errors"] : Array.isArray(raw["Errors"]) ? raw["Errors"] : []) as Record<string, unknown>[];
-    const messagesList = (Array.isArray(raw["messages"]) ? raw["messages"] : Array.isArray(raw["Messages"]) ? raw["Messages"] : []) as Record<string, unknown>[];
-
-    if (errorsList.length) {
-      const first = errorsList[0];
-      throw new Error(`SMSPortal rejected message: ${first?.["error"] ?? first?.["Error"] ?? "unknown error"}`);
+    const faults = raw.errorReport?.faults ?? [];
+    if (faults.length) {
+      throw new Error(`SMSPortal rejected message: ${JSON.stringify(faults[0])}`);
     }
 
-    const providerMessageId = String(messagesList[0]?.["messageId"] ?? messagesList[0]?.["MessageId"] ?? "");
+    const providerMessageId = raw.eventId != null ? String(raw.eventId) : "";
     return { providerMessageId };
   },
 

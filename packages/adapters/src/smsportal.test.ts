@@ -48,11 +48,18 @@ describe("validateCredentials", () => {
 });
 
 describe("send", () => {
+  // Mirrors the actual SMSPortal BulkMessages response shape observed in production.
   const sendSuccess = {
     ok: true,
     json: async () => ({
-      errors: [],
-      messages: [{ messageId: "sms-portal-msg-id-123" }],
+      cost: 1,
+      remainingBalance: 589,
+      eventId: 17291650560,
+      sample: "Hello!",
+      costBreakdown: [{ quantity: 1, cost: 1, network: "Local" }],
+      messages: 1,
+      parts: 1,
+      errorReport: { noNetwork: 0, noContents: 0, contentTooLong: 0, duplicates: 0, optedOuts: 0, faults: [] },
     }),
   };
 
@@ -62,7 +69,7 @@ describe("send", () => {
       { channel: "sms", to: "+27821234567", body: "Hello!" },
       creds,
     );
-    expect(result.providerMessageId).toBe("sms-portal-msg-id-123");
+    expect(result.providerMessageId).toBe("17291650560");
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -110,10 +117,13 @@ describe("send", () => {
     ).rejects.toThrow("SMSPortal send failed (400)");
   });
 
-  it("throws when errors array is non-empty", async () => {
+  it("throws when errorReport.faults is non-empty", async () => {
     mockFetch.mockResolvedValueOnce(authSuccess).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ errors: [{ error: "invalid destination" }], messages: [] }),
+      json: async () => ({
+        cost: 0, remainingBalance: 589, eventId: 0, messages: 0, parts: 0,
+        errorReport: { noNetwork: 0, noContents: 0, contentTooLong: 0, duplicates: 1, optedOuts: 0, faults: [{ error: "invalid destination" }] },
+      }),
     });
     await expect(
       smsportalAdapter.send({ channel: "sms", to: "bad-number", body: "Hi" }, creds),

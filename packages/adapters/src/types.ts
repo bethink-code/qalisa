@@ -21,6 +21,8 @@ export interface OutboundMessage {
   body?: string;
   templateId?: string;
   variables?: Record<string, string>;
+  /** Our internal message ID — passed as provider customerId where supported for reliable DLR matching. */
+  messageId?: string;
 }
 
 export interface SendResult {

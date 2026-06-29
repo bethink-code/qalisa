@@ -52,7 +52,7 @@ export async function dispatchMessage(
     const secret = await vault.resolveSecret(cred.secretRef, tenantId);
     const adapter = getAdapter(channel, provider);
     const result = await adapter.send(
-      { channel, to, subject, body: resolvedBody },
+      { channel, to, subject, body: resolvedBody, messageId },
       { config: cred.config, secret },
     );
 

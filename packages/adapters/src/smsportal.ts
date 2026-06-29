@@ -42,12 +42,13 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
   return data.token;
 }
 
-/** Map SMSPortal status strings to normalised DeliveryEvent status. */
+/** Map SMSPortal delivery receipt status codes to normalised DeliveryEvent status.
+ *  Codes from https://docs.smsportal.com/docs/delivery-statuses */
 function mapStatus(raw: string): DeliveryEvent["status"] | null {
   const s = raw.toUpperCase();
-  if (s === "DELIVERED") return "delivered";
-  if (["FAILED", "UNDELIVERED", "EXPIRED", "REJECTED"].includes(s)) return "failed";
-  if (["SUBMITTED", "BUFFERED", "SENT"].includes(s)) return "sent";
+  if (s === "DELIVRD") return "delivered";
+  if (["UNDELIV", "EXPIRED", "BLIST", "CANCELLED", "NOROUTE"].includes(s)) return "failed";
+  if (["SUBMITD", "STAGED"].includes(s)) return "sent";
   return null;
 }
 
@@ -82,7 +83,12 @@ export const smsportalAdapter: ChannelAdapter = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [{ destination: normaliseMsisdn(msg.to), content: msg.body ?? "" }],
+          messages: [{
+            destination: normaliseMsisdn(msg.to),
+            content: msg.body ?? "",
+            // Pass our internal ID so it echoes back in DLR webhooks as customerId.
+            ...(msg.messageId ? { customerId: msg.messageId } : {}),
+          }],
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -108,31 +114,26 @@ export const smsportalAdapter: ChannelAdapter = {
       throw new Error(`SMSPortal rejected message: ${JSON.stringify(faults[0])}`);
     }
 
-    const providerMessageId = raw.eventId != null ? String(raw.eventId) : "";
+    // Prefer our own messageId (echoed back as customerId in DLRs) for matching.
+    // Fall back to SMSPortal's eventId if messageId wasn't supplied.
+    const providerMessageId = msg.messageId ?? (raw.eventId != null ? String(raw.eventId) : "");
     return { providerMessageId };
   },
 
   async parseWebhook(req: RawWebhook): Promise<DeliveryEvent[]> {
-    // SMSPortal does not sign delivery callbacks — authenticity relies on
-    // the tenantId-scoped webhook URL being unpredictable.
-    //
-    // The send response returns eventId (batch level) — that's what we store
-    // as providerMessageId. The receipt payload also carries eventId at the
-    // top level, so we match on that rather than the per-message messageId
-    // (which is a different ID not available at send time).
+    // SMSPortal delivery receipts are flat objects — one POST per message:
+    // { eventId, status, phoneNumber, sentUtc, receivedUtc, ... }
+    // eventId matches what the BulkMessages send response returns.
+    // SMSPortal does not sign callbacks; the tenantId-scoped URL is the auth.
     const body = req.body as Record<string, unknown>;
+    // customerId = our internal messageId (passed at send time); eventId = batch ID fallback.
+    const customerId = body["customerId"] ? String(body["customerId"]) : "";
     const eventId = body["eventId"] != null ? String(body["eventId"]) : "";
-    const rawMessages = body["messages"];
-    if (!Array.isArray(rawMessages) || !eventId) return [];
-
-    const events: DeliveryEvent[] = [];
-    for (const m of rawMessages as Record<string, unknown>[]) {
-      const rawStatus = String(m["status"] ?? "");
-      if (!rawStatus) continue;
-      const status = mapStatus(rawStatus);
-      if (!status) continue;
-      events.push({ providerMessageId: eventId, status, raw: m });
-    }
-    return events;
+    const providerMessageId = customerId || eventId;
+    const rawStatus = String(body["status"] ?? "");
+    if (!providerMessageId || !rawStatus) return [];
+    const status = mapStatus(rawStatus);
+    if (!status) return [];
+    return [{ providerMessageId, status, raw: body }];
   },
 };

@@ -115,18 +115,23 @@ export const smsportalAdapter: ChannelAdapter = {
   async parseWebhook(req: RawWebhook): Promise<DeliveryEvent[]> {
     // SMSPortal does not sign delivery callbacks — authenticity relies on
     // the tenantId-scoped webhook URL being unpredictable.
+    //
+    // The send response returns eventId (batch level) — that's what we store
+    // as providerMessageId. The receipt payload also carries eventId at the
+    // top level, so we match on that rather than the per-message messageId
+    // (which is a different ID not available at send time).
     const body = req.body as Record<string, unknown>;
+    const eventId = body["eventId"] != null ? String(body["eventId"]) : "";
     const rawMessages = body["messages"];
-    if (!Array.isArray(rawMessages)) return [];
+    if (!Array.isArray(rawMessages) || !eventId) return [];
 
     const events: DeliveryEvent[] = [];
     for (const m of rawMessages as Record<string, unknown>[]) {
-      const providerMessageId = String(m["messageId"] ?? "");
       const rawStatus = String(m["status"] ?? "");
-      if (!providerMessageId || !rawStatus) continue;
+      if (!rawStatus) continue;
       const status = mapStatus(rawStatus);
       if (!status) continue;
-      events.push({ providerMessageId, status, raw: m });
+      events.push({ providerMessageId: eventId, status, raw: m });
     }
     return events;
   },

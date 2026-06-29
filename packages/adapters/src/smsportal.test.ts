@@ -132,9 +132,9 @@ describe("send", () => {
 });
 
 describe("parseWebhook", () => {
-  it("parses a delivered event", async () => {
+  it("parses a delivered event using top-level eventId", async () => {
     const body = {
-      eventId: "evt-1",
+      eventId: "17291650560",
       messages: [{ messageId: "msg-123", status: "DELIVERED" }],
     };
     const events = await smsportalAdapter.parseWebhook(
@@ -143,11 +143,11 @@ describe("parseWebhook", () => {
     );
     expect(events).toHaveLength(1);
     expect(events[0]!.status).toBe("delivered");
-    expect(events[0]!.providerMessageId).toBe("msg-123");
+    expect(events[0]!.providerMessageId).toBe("17291650560");
   });
 
   it("parses a failed event", async () => {
-    const body = { messages: [{ messageId: "msg-456", status: "FAILED" }] };
+    const body = { eventId: "evt-1", messages: [{ messageId: "msg-456", status: "FAILED" }] };
     const events = await smsportalAdapter.parseWebhook(
       { headers: {}, body },
       { config: {}, secret },
@@ -158,7 +158,7 @@ describe("parseWebhook", () => {
   it("maps UNDELIVERED, EXPIRED, REJECTED to failed", async () => {
     for (const status of ["UNDELIVERED", "EXPIRED", "REJECTED"]) {
       const events = await smsportalAdapter.parseWebhook(
-        { headers: {}, body: { messages: [{ messageId: "x", status }] } },
+        { headers: {}, body: { eventId: "1", messages: [{ messageId: "x", status }] } },
         { config: {}, secret },
       );
       expect(events[0]!.status).toBe("failed");
@@ -168,7 +168,7 @@ describe("parseWebhook", () => {
   it("maps SUBMITTED and SENT to sent", async () => {
     for (const status of ["SUBMITTED", "SENT"]) {
       const events = await smsportalAdapter.parseWebhook(
-        { headers: {}, body: { messages: [{ messageId: "x", status }] } },
+        { headers: {}, body: { eventId: "1", messages: [{ messageId: "x", status }] } },
         { config: {}, secret },
       );
       expect(events[0]!.status).toBe("sent");
@@ -176,7 +176,7 @@ describe("parseWebhook", () => {
   });
 
   it("skips unknown statuses", async () => {
-    const body = { messages: [{ messageId: "msg-1", status: "PENDING_SOMETHING" }] };
+    const body = { eventId: "1", messages: [{ messageId: "msg-1", status: "PENDING_SOMETHING" }] };
     const events = await smsportalAdapter.parseWebhook(
       { headers: {}, body },
       { config: {}, secret },
@@ -192,8 +192,17 @@ describe("parseWebhook", () => {
     expect(events).toHaveLength(0);
   });
 
+  it("returns empty array when eventId is missing", async () => {
+    const events = await smsportalAdapter.parseWebhook(
+      { headers: {}, body: { messages: [{ messageId: "x", status: "DELIVERED" }] } },
+      { config: {}, secret },
+    );
+    expect(events).toHaveLength(0);
+  });
+
   it("handles multiple messages in one callback", async () => {
     const body = {
+      eventId: "999",
       messages: [
         { messageId: "a", status: "DELIVERED" },
         { messageId: "b", status: "FAILED" },

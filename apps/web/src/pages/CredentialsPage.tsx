@@ -10,12 +10,23 @@ interface FieldMeta {
   optional?: boolean;
 }
 
+interface SetupStep {
+  text: string;
+  warning?: string;
+  url?: { label: string; href: string };
+}
+
+interface WebhookStep {
+  text: string;
+}
+
 const CHANNELS: {
   channel: Channel;
   label: string;
   provider: string;
   webhookPath: string;
-  webhookHint: string;
+  webhookSteps: WebhookStep[];
+  setupSteps: SetupStep[];
   configFields: FieldMeta[];
   secretLabel: string;
 }[] = [
@@ -24,12 +35,25 @@ const CHANNELS: {
     label: "Email — Mailgun",
     provider: "mailgun",
     webhookPath: "mailgun",
-    webhookHint: "Paste into Mailgun dashboard → Webhooks for your domain.",
+    webhookSteps: [
+      { text: "Log in to Mailgun and go to Sending → Webhooks." },
+      { text: "Select your sending domain from the dropdown at the top." },
+      { text: "Click \"Add webhook\", select the \"Delivered Messages\" event, and paste the URL above." },
+      { text: "Repeat for \"Permanent Failure\" and \"Temporary Failure\" events if you want failed delivery status updates." },
+    ],
+    setupSteps: [
+      { text: "Log in to your Mailgun account.", url: { label: "Open Mailgun", href: "https://app.mailgun.com" } },
+      { text: "Go to Sending → Domains. Copy your sending domain — it looks like mg.yourdomain.com." },
+      { text: "Go to Settings → API Keys. Click \"Add new key\", give it a name like \"Qalisa\", and copy the key." },
+      { text: "Go to Sending → Webhooks. Select your domain, then copy the \"HTTP webhook signing key\" shown at the top of the page." },
+      { text: "Fill in the form below with your domain, API key, and webhook signing key, then click \"Save credential\"." },
+      { text: "Click \"Test\" to confirm everything is working, then follow the webhook setup steps that appear." },
+    ],
     configFields: [
-      { key: "domain", label: "Domain", hint: "e.g. mg.example.com" },
-      { key: "fromAddress", label: "From Address", hint: "e.g. Acme <hello@mg.example.com>", optional: true },
-      { key: "region", label: "Region", hint: "us (default) or eu", optional: true },
-      { key: "webhookSigningKey", label: "Webhook Signing Key", hint: "Mailgun dashboard → Webhooks → HTTP webhook signing key" },
+      { key: "domain", label: "Sending Domain", hint: "e.g. mg.yourdomain.com" },
+      { key: "fromAddress", label: "From Address", hint: "e.g. Acme <hello@mg.yourdomain.com>", optional: true },
+      { key: "region", label: "Region", hint: "us (default) or eu — check your Mailgun dashboard to confirm", optional: true },
+      { key: "webhookSigningKey", label: "Webhook Signing Key", hint: "Mailgun → Sending → Webhooks → HTTP webhook signing key at the top of the page" },
     ],
     secretLabel: "API Key",
   },
@@ -38,7 +62,25 @@ const CHANNELS: {
     label: "SMS — SMSPortal",
     provider: "smsportal",
     webhookPath: "smsportal",
-    webhookHint: "Paste into SMSPortal dashboard → Delivery Receipts callback URL.",
+    webhookSteps: [
+      { text: "Important: SMSPortal will test your URL before saving — the engine must be publicly reachable (use your deployed/production URL above, not a local address)." },
+      { text: "Go back to your SMSPortal API Keys list and click on the key you just created." },
+      { text: "Click the Webhooks tab at the top of the key's settings page." },
+      { text: "Next to \"SMS Delivery Receipt\", click \"+ Create\"." },
+      { text: "Enter a Name (e.g. \"Qalisa\") and a Description (e.g. \"Delivery receipts\"), then paste the URL above as the Request URL. Click Test — it must pass before you can save." },
+      { text: "Once the test passes, click Save." },
+      { text: "Back on the Webhooks tab, select the webhook you just created from the \"SMS Delivery Receipt\" dropdown." },
+      { text: "Click \"Update Settings\" to save." },
+    ],
+    setupSteps: [
+      { text: "Log in to your SMSPortal account.", url: { label: "Open SMSPortal", href: "https://portal.smsportal.com" } },
+      { text: "Go to Settings → API Keys." },
+      { text: "Click \"+ Create API Key\" and choose REST from the dropdown." },
+      { text: "Give it a name like \"Qalisa\" and save." },
+      { text: "Copy the Client ID and Client Secret shown in the list.", warning: "The Client Secret is only shown once. Copy it before navigating away." },
+      { text: "Fill in the form below with your Client ID and Client Secret, then click \"Save credential\"." },
+      { text: "Click \"Test\" to confirm it connects. Once it shows healthy, follow the webhook setup steps that appear to enable delivery receipts." },
+    ],
     configFields: [
       { key: "clientId", label: "Client ID" },
     ],
@@ -49,12 +91,27 @@ const CHANNELS: {
     label: "WhatsApp — Meta Cloud API",
     provider: "meta_cloud_api",
     webhookPath: "meta",
-    webhookHint: "Paste into Meta App → Webhooks. The Verify Token must match the value you set below.",
+    webhookSteps: [
+      { text: "In your Meta app, go to WhatsApp → Configuration." },
+      { text: "Under Webhooks, click \"Edit\" and paste the URL above as the Callback URL." },
+      { text: "Enter your Webhook Verify Token (the same value you set in the form above) in the Verify Token field." },
+      { text: "Click \"Verify and Save\". Meta will call your webhook URL to confirm it's reachable." },
+      { text: "Once verified, click \"Manage\" next to the webhook and subscribe to the \"messages\" field to receive delivery status updates." },
+    ],
+    setupSteps: [
+      { text: "You'll need a Meta Business account and a WhatsApp Business Platform app.", url: { label: "Open Meta for Developers", href: "https://developers.facebook.com" } },
+      { text: "In your app, go to WhatsApp → API Setup. Note your Phone Number ID and WhatsApp Business Account ID." },
+      { text: "Generate a System User access token with whatsapp_business_messaging and whatsapp_business_management permissions." },
+      { text: "Go to App Settings → Basic and copy the App Secret." },
+      { text: "Choose a Webhook Verify Token — any secret string you make up, e.g. \"qalisa-verify-2024\". You'll enter it here and again in Meta's dashboard." },
+      { text: "Fill in the form below and click \"Save credential\", then click \"Test\" to confirm the connection." },
+      { text: "Once saved, follow the webhook setup steps that appear to complete the Meta webhook subscription." },
+    ],
     configFields: [
       { key: "wabaId", label: "WhatsApp Business Account ID" },
       { key: "phoneNumberId", label: "Phone Number ID" },
-      { key: "appSecret", label: "App Secret", hint: "Meta app settings → Basic" },
-      { key: "webhookVerifyToken", label: "Webhook Verify Token", hint: "Any secret string — enter the same value in Meta dashboard" },
+      { key: "appSecret", label: "App Secret", hint: "Meta app → App Settings → Basic" },
+      { key: "webhookVerifyToken", label: "Webhook Verify Token", hint: "Any secret string — you'll enter this same value in Meta's webhook settings" },
     ],
     secretLabel: "System User Access Token",
   },
@@ -66,7 +123,44 @@ function statusPill(s: Credential["status"]) {
   return <span className="pill muted">unverified</span>;
 }
 
-function WebhookUrlBox({ url, hint }: { url: string; hint: string }) {
+function SetupGuide({ steps }: { steps: SetupStep[] }) {
+  return (
+    <div style={{
+      margin: "0 20px 20px",
+      padding: "16px 20px",
+      background: "var(--surface)",
+      border: "1px solid var(--hairline)",
+      borderRadius: 6,
+    }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Setup guide</div>
+      <ol style={{ margin: 0, padding: "0 0 0 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {steps.map((step, i) => (
+          <li key={i} style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink)" }}>
+            {step.text}
+            {step.url && (
+              <> — <a href={step.url.href} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>{step.url.label} ↗</a></>
+            )}
+            {step.warning && (
+              <div style={{
+                marginTop: 6,
+                padding: "6px 10px",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                borderRadius: 4,
+                fontSize: 12,
+                color: "#92400e",
+              }}>
+                ⚠ {step.warning}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function WebhookUrlBox({ url, steps }: { url: string; steps: WebhookStep[] }) {
   const [copied, setCopied] = useState(false);
 
   function copy() {
@@ -78,10 +172,10 @@ function WebhookUrlBox({ url, hint }: { url: string; hint: string }) {
 
   return (
     <div style={{ borderTop: "1px solid var(--hairline)", padding: "16px 20px" }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--graphite)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Webhook URL
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
+        Next: set up delivery receipts
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
         <input
           className="input"
           readOnly
@@ -90,10 +184,16 @@ function WebhookUrlBox({ url, hint }: { url: string; hint: string }) {
           onFocus={(e) => e.target.select()}
         />
         <button className="btn sm" onClick={copy} style={{ whiteSpace: "nowrap" }}>
-          {copied ? "Copied!" : "Copy"}
+          {copied ? "Copied!" : "Copy URL"}
         </button>
       </div>
-      <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--graphite)" }}>{hint}</p>
+      <ol style={{ margin: 0, padding: "0 0 0 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {steps.map((step, i) => (
+          <li key={i} style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink)" }}>
+            {step.text}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -101,13 +201,14 @@ function WebhookUrlBox({ url, hint }: { url: string; hint: string }) {
 interface AddFormProps {
   channel: Channel;
   provider: string;
+  setupSteps: SetupStep[];
   configFields: FieldMeta[];
   secretLabel: string;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-function AddForm({ channel, provider, configFields, secretLabel, onSaved, onCancel }: AddFormProps) {
+function AddForm({ channel, provider, setupSteps, configFields, secretLabel, onSaved, onCancel }: AddFormProps) {
   const [config, setConfig] = useState<Record<string, string>>({});
   const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
@@ -132,44 +233,47 @@ function AddForm({ channel, provider, configFields, secretLabel, onSaved, onCanc
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ padding: "20px", borderTop: "1px solid var(--hairline)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 20px" }}>
-        {configFields.map((f) => (
-          <div className="field" key={f.key}>
-            <label htmlFor={f.key}>
-              {f.label}
-              {f.optional && <span style={{ color: "var(--graphite)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
-            </label>
+    <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 20 }}>
+      <SetupGuide steps={setupSteps} />
+      <form onSubmit={handleSubmit} style={{ padding: "0 20px 20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 20px" }}>
+          {configFields.map((f) => (
+            <div className="field" key={f.key}>
+              <label htmlFor={f.key}>
+                {f.label}
+                {f.optional && <span style={{ color: "var(--graphite)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
+              </label>
+              <input
+                id={f.key}
+                className="input"
+                value={config[f.key] ?? ""}
+                onChange={(e) => setField(f.key, e.target.value)}
+                required={!f.optional}
+              />
+              {f.hint && <span className="field-hint">{f.hint}</span>}
+            </div>
+          ))}
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor="secret">{secretLabel}</label>
             <input
-              id={f.key}
+              id="secret"
               className="input"
-              value={config[f.key] ?? ""}
-              onChange={(e) => setField(f.key, e.target.value)}
-              required={!f.optional}
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              required
             />
-            {f.hint && <span className="field-hint">{f.hint}</span>}
           </div>
-        ))}
-        <div className="field" style={{ gridColumn: "1 / -1" }}>
-          <label htmlFor="secret">{secretLabel}</label>
-          <input
-            id="secret"
-            className="input"
-            type="password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            required
-          />
         </div>
-      </div>
-      {error && (
-        <div style={{ color: "var(--status-red)", fontSize: 13, marginBottom: 12 }}>{error}</div>
-      )}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn primary" disabled={saving}>{saving ? "Saving…" : "Save credential"}</button>
-        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
+        {error && (
+          <div style={{ color: "var(--status-red)", fontSize: 13, marginBottom: 12 }}>{error}</div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn primary" disabled={saving}>{saving ? "Saving…" : "Save credential"}</button>
+          <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -216,7 +320,7 @@ export function CredentialsPage() {
       {loading ? (
         <div className="empty-state">Loading…</div>
       ) : (
-        CHANNELS.map(({ channel, label, provider, webhookPath, webhookHint, configFields, secretLabel }) => {
+        CHANNELS.map(({ channel, label, provider, webhookPath, webhookSteps, setupSteps, configFields, secretLabel }) => {
           const existing = creds.find((c) => c.channel === channel);
           const isAdding = adding === channel;
           const webhookUrl = tenantId
@@ -263,12 +367,13 @@ export function CredentialsPage() {
                       </div>
                     </div>
                   </div>
-                  {webhookUrl && <WebhookUrlBox url={webhookUrl} hint={webhookHint} />}
+                  {webhookUrl && <WebhookUrlBox url={webhookUrl} steps={webhookSteps} />}
                 </>
               ) : isAdding ? (
                 <AddForm
                   channel={channel}
                   provider={provider}
+                  setupSteps={setupSteps}
                   configFields={configFields}
                   secretLabel={secretLabel}
                   onSaved={() => { setAdding(null); reload(); }}

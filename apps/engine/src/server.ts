@@ -6,6 +6,7 @@ import { apiKeyAuth } from "./middleware/apiKeyAuth";
 import { errorHandler, notFoundHandler } from "./middleware/errors";
 import { credentialsRouter } from "./routes/credentials";
 import { healthRouter } from "./routes/health";
+import { meRouter } from "./routes/me";
 import { messagesRouter } from "./routes/messages";
 import { tenantsRouter } from "./routes/tenants";
 import { templatesRouter } from "./routes/templates";
@@ -31,6 +32,7 @@ export function createServer(): Express {
   // Admin-token guarded: platform provisioning.
   app.use("/v1/tenants", adminAuth, tenantsRouter);
   // API-key guarded: tenant-scoped operations.
+  app.use("/v1/me", apiKeyAuth, meRouter);
   app.use("/v1/credentials", apiKeyAuth, credentialsRouter);
   app.use("/v1/messages", apiKeyAuth, messagesRouter);
   app.use("/v1/templates", apiKeyAuth, templatesRouter);

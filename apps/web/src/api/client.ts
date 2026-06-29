@@ -1,4 +1,10 @@
-const BASE = `${import.meta.env.VITE_ENGINE_URL ?? ""}/v1`;
+const ENGINE_URL = (import.meta.env.VITE_ENGINE_URL as string | undefined) ?? "";
+const BASE = `${ENGINE_URL}/v1`;
+
+/** Absolute engine base URL — used for webhook URL display. */
+export function engineBaseUrl(): string {
+  return ENGINE_URL || "http://localhost:4000";
+}
 const KEY = "qalisa_api_key";
 
 export function getApiKey(): string {
@@ -87,6 +93,10 @@ export interface Template {
 }
 
 export const api = {
+  me: {
+    get: () => apiFetch<{ id: string; name: string }>("/me"),
+  },
+
   credentials: {
     list: () => apiFetch<Credential[]>("/credentials"),
     create: (body: unknown) =>

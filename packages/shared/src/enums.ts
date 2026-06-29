@@ -18,7 +18,7 @@ export const CHANNELS = ["email", "sms", "whatsapp"] as const;
 export const channelSchema = z.enum(CHANNELS);
 export type Channel = (typeof CHANNELS)[number];
 
-export const PROVIDERS = ["mailgun", "smsportal", "meta_cloud_api"] as const;
+export const PROVIDERS = ["mailgun", "mailjet", "smsportal", "meta_cloud_api"] as const;
 export const providerSchema = z.enum(PROVIDERS);
 export type Provider = (typeof PROVIDERS)[number];
 
@@ -44,7 +44,7 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 
 /** Which providers are valid for a given channel. */
 export const PROVIDERS_BY_CHANNEL = {
-  email: ["mailgun"],
+  email: ["mailgun", "mailjet"],
   sms: ["smsportal"],
   whatsapp: ["meta_cloud_api"],
 } as const satisfies Record<Channel, readonly Provider[]>;

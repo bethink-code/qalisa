@@ -62,7 +62,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 export interface Credential {
   id: string;
   channel: "email" | "sms" | "whatsapp";
-  provider: "mailgun" | "smsportal" | "meta_cloud_api";
+  provider: "mailgun" | "mailjet" | "smsportal" | "meta_cloud_api";
   config: Record<string, unknown>;
   status: "unverified" | "healthy" | "failing";
   lastHealthCheckAt: string | null;
@@ -72,7 +72,7 @@ export interface Credential {
 export interface Message {
   id: string;
   channel: "email" | "sms" | "whatsapp";
-  provider: "mailgun" | "smsportal" | "meta_cloud_api";
+  provider: "mailgun" | "mailjet" | "smsportal" | "meta_cloud_api";
   to: string;
   body: string;
   status: "queued" | "sent" | "delivered" | "failed";

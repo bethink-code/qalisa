@@ -72,6 +72,32 @@ webhooksRouter.post(
 );
 
 /**
+ * POST /v1/webhooks/mailjet/:tenantId
+ *
+ * Mailjet Event API callback. Mailjet does not sign callbacks; the
+ * tenantId-scoped URL path is the only authentication mechanism.
+ */
+webhooksRouter.post(
+  "/mailjet/:tenantId",
+  asyncHandler(async (req, res) => {
+    const { tenantId } = req.params;
+    if (!tenantId) { res.status(400).json({ error: "Missing tenantId" }); return; }
+
+    try {
+      const processed = await handleProviderWebhook(tenantId, "email", "mailjet", {
+        headers: req.headers as Record<string, string | string[] | undefined>,
+        body: req.body,
+        rawBody: req.rawBody,
+      });
+      res.status(200).json({ processed });
+    } catch (err) {
+      const code = (err as { statusCode?: number }).statusCode;
+      res.status(code ?? 500).json({ error: (err as Error).message });
+    }
+  }),
+);
+
+/**
  * POST /v1/webhooks/smsportal/:tenantId
  *
  * SMSPortal delivery receipt callback. SMSPortal does not sign callbacks, so

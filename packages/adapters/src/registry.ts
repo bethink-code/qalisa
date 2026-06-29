@@ -1,10 +1,11 @@
 import type { Channel, Provider } from "@qalisa/shared";
 import { mailgunAdapter } from "./mailgun";
+import { mailjetAdapter } from "./mailjet";
 import { metaAdapter } from "./meta";
 import { smsportalAdapter } from "./smsportal";
 import type { ChannelAdapter } from "./types";
 
-const ADAPTERS: readonly ChannelAdapter[] = [mailgunAdapter, smsportalAdapter, metaAdapter];
+const ADAPTERS: readonly ChannelAdapter[] = [mailgunAdapter, mailjetAdapter, smsportalAdapter, metaAdapter];
 
 /** Resolve the adapter for a channel/provider pair. The only dispatch point. */
 export function getAdapter(channel: Channel, provider: Provider): ChannelAdapter {

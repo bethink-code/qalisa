@@ -20,7 +20,7 @@ interface WebhookStep {
   text: string;
 }
 
-const CHANNELS: {
+const PROVIDERS: {
   channel: Channel;
   label: string;
   provider: string;
@@ -30,6 +30,31 @@ const CHANNELS: {
   configFields: FieldMeta[];
   secretLabel: string;
 }[] = [
+  {
+    channel: "email",
+    label: "Email — Mailjet",
+    provider: "mailjet",
+    webhookPath: "mailjet",
+    webhookSteps: [
+      { text: "Log in to your Mailjet account and go to Account → Event Tracking." },
+      { text: "Click \"Add a webhook URL\" and paste the URL above." },
+      { text: "Tick the \"Sent\", \"Bounce\", and \"Blocked\" event types." },
+      { text: "Click Save. Mailjet will start sending delivery updates to this URL." },
+    ],
+    setupSteps: [
+      { text: "Log in to your Mailjet account.", url: { label: "Open Mailjet", href: "https://app.mailjet.com" } },
+      { text: "Go to Account → Sender domains & addresses. Add your sender email address and verify it via the confirmation email.", warning: "The sender email must be verified before Mailjet will allow you to send from it." },
+      { text: "Go to Account → API Keys. Your API Key is shown on the page. Click the eye icon to reveal the Secret Key." },
+      { text: "Fill in the form below with your API Key, Secret Key, and verified sender address, then click \"Save credential\"." },
+      { text: "Click \"Test\" to confirm everything is working, then follow the webhook setup steps that appear." },
+    ],
+    configFields: [
+      { key: "apiKey", label: "API Key", hint: "Mailjet → Account → API Keys (the public key)" },
+      { key: "fromAddress", label: "From Address", hint: "e.g. garth@bethink.co.za — must be a verified sender in Mailjet" },
+      { key: "fromName", label: "From Name", hint: "e.g. Garth — displayed as the sender name", optional: true },
+    ],
+    secretLabel: "Secret Key",
+  },
   {
     channel: "email",
     label: "Email — Mailgun",
@@ -283,7 +308,7 @@ export function CredentialsPage() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, { status: string; detail: string }>>({});
-  const [adding, setAdding] = useState<Channel | null>(null);
+  const [adding, setAdding] = useState<string | null>(null);
 
   function reload() {
     api.credentials.list().then(setCreds).finally(() => setLoading(false));
@@ -320,19 +345,19 @@ export function CredentialsPage() {
       {loading ? (
         <div className="empty-state">Loading…</div>
       ) : (
-        CHANNELS.map(({ channel, label, provider, webhookPath, webhookSteps, setupSteps, configFields, secretLabel }) => {
-          const existing = creds.find((c) => c.channel === channel);
-          const isAdding = adding === channel;
+        PROVIDERS.map(({ channel, label, provider, webhookPath, webhookSteps, setupSteps, configFields, secretLabel }) => {
+          const existing = creds.find((c) => c.channel === channel && c.provider === provider);
+          const isAdding = adding === provider;
           const webhookUrl = tenantId
             ? `${engineBaseUrl()}/v1/webhooks/${webhookPath}/${tenantId}`
             : "";
 
           return (
-            <div key={channel} className="panel">
+            <div key={provider} className="panel">
               <div className="panel-head">
                 <span className="panel-title">{label}</span>
                 {!existing && !isAdding && (
-                  <button className="btn sm" onClick={() => setAdding(channel)}>Add</button>
+                  <button className="btn sm" onClick={() => setAdding(provider)}>Add</button>
                 )}
               </div>
 
@@ -342,7 +367,7 @@ export function CredentialsPage() {
                     <div className="cred-card">
                       <div className="cred-info">
                         <div className="cred-name">
-                          {String(existing.config.domain ?? existing.config.clientId ?? existing.config.phoneNumberId ?? "—")}
+                          {String(existing.config.fromAddress ?? existing.config.domain ?? existing.config.clientId ?? existing.config.phoneNumberId ?? "—")}
                         </div>
                         <div className="cred-meta">
                           {statusPill(existing.status)}

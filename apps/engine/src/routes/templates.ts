@@ -359,7 +359,7 @@ templatesRouter.post(
           name: metaTemplateName,
           language,
           category,
-          parameter_format: "named",
+          // parameter_format omitted — Meta infers named format from body_text_named_params
           components: buildMetaComponents(comp),
         };
       } else {
@@ -370,7 +370,6 @@ templatesRouter.post(
           name: metaTemplateName,
           language,
           category,
-          parameter_format: "named",
           components: [{
             type: "BODY",
             text: bodyText,
@@ -418,6 +417,69 @@ templatesRouter.post(
         whatsappLanguage: language,
       })
       .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)))
+      .returning(SAFE_COLUMNS);
+
+    res.json(updated);
+  }),
+);
+
+// POST /v1/templates/:id/sync-whatsapp — pull current status from Meta Graph API
+templatesRouter.post(
+  "/:id/sync-whatsapp",
+  asyncHandler(async (req, res) => {
+    const tenantId = req.tenantId;
+    if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
+
+    const [template] = await db
+      .select({ id: templates.id, metaTemplateName: templates.metaTemplateName })
+      .from(templates)
+      .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)))
+      .limit(1);
+    if (!template) { res.status(404).json({ error: "Template not found" }); return; }
+    if (!template.metaTemplateName) { res.status(422).json({ error: "Template has not been submitted to Meta yet" }); return; }
+
+    const [cred] = await db
+      .select({ secretRef: providerCredentials.secretRef, config: providerCredentials.config })
+      .from(providerCredentials)
+      .where(and(eq(providerCredentials.tenantId, tenantId), eq(providerCredentials.channel, "whatsapp"), eq(providerCredentials.provider, "meta_cloud_api")))
+      .limit(1);
+    if (!cred) { res.status(422).json({ error: "No Meta Cloud API credential configured" }); return; }
+
+    const wabaId = typeof cred.config?.wabaId === "string" ? cred.config.wabaId : "";
+    if (!wabaId) { res.status(422).json({ error: "Meta credential missing wabaId" }); return; }
+
+    const secret = await vault.resolveSecret(cred.secretRef, tenantId);
+    const token = secret.reveal();
+
+    const metaRes = await fetch(
+      `${GRAPH_URL}/${wabaId}/message_templates?name=${encodeURIComponent(template.metaTemplateName)}&fields=id,name,status,category,rejected_reason`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+    );
+    if (!metaRes.ok) {
+      const err = (await metaRes.json().catch(() => ({}))) as { error?: { message?: string } };
+      res.status(metaRes.status).json({ error: `Meta API error: ${err.error?.message ?? metaRes.statusText}` });
+      return;
+    }
+
+    const data = (await metaRes.json()) as { data?: Array<{ id?: string; status?: string; category?: string; rejected_reason?: string }> };
+    const match = data.data?.[0];
+    if (!match) { res.status(404).json({ error: "Template not found on Meta" }); return; }
+
+    const rawStatus = (match.status ?? "").toUpperCase();
+    const newStatus: "approved" | "rejected" | "pending" | null =
+      rawStatus === "APPROVED" || rawStatus === "ACTIVE" ? "approved"
+      : rawStatus === "REJECTED" || rawStatus === "DISABLED" ? "rejected"
+      : rawStatus === "PENDING" || rawStatus === "IN_REVIEW" ? "pending"
+      : null;
+
+    const [updated] = await db
+      .update(templates)
+      .set({
+        ...(newStatus ? { whatsappStatus: newStatus } : {}),
+        ...(match.category ? { whatsappCategory: match.category } : {}),
+        ...(match.rejected_reason ? { whatsappRejectionReason: match.rejected_reason } : {}),
+      })
+      .where(and(eq(templates.id, template.id), eq(templates.tenantId, tenantId)))
       .returning(SAFE_COLUMNS);
 
     res.json(updated);

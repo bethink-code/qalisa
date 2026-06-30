@@ -158,5 +158,6 @@ export const api = {
         body: JSON.stringify(body),
       }),
     getOne: (id: string) => apiFetch<Template>(`/templates/${id}`),
+    syncWhatsapp: (id: string) => apiFetch<Template>(`/templates/${id}/sync-whatsapp`, { method: "POST" }),
   },
 };

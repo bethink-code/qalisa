@@ -177,6 +177,19 @@ export function TemplatesPage() {
     }
   }
 
+  async function handleSyncWhatsapp(t: Template) {
+    setSubmitting(t.id);
+    setSubmitErrors((prev) => ({ ...prev, [t.id]: "" }));
+    try {
+      const updated = await api.templates.syncWhatsapp(t.id);
+      setTemplates((prev) => prev.map((r) => (r.id === t.id ? updated : r)));
+    } catch (err) {
+      setSubmitErrors((prev) => ({ ...prev, [t.id]: err instanceof Error ? err.message : "Sync failed" }));
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
   return (
     <main className="page">
       <div className="page-head">
@@ -280,12 +293,13 @@ export function TemplatesPage() {
                       <td>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                           {t.channel === "whatsapp" && (t.whatsappStatus === null || t.whatsappStatus === "rejected") && (
-                            <button
-                              className="btn sm"
-                              disabled={submitting === t.id}
-                              onClick={() => handleSubmitWhatsapp(t)}
-                            >
+                            <button className="btn sm" disabled={submitting === t.id} onClick={() => handleSubmitWhatsapp(t)}>
                               {submitting === t.id ? "Submitting…" : t.whatsappStatus === "rejected" ? "Resubmit to Meta" : "Submit to Meta"}
+                            </button>
+                          )}
+                          {t.channel === "whatsapp" && t.whatsappStatus === "pending" && (
+                            <button className="btn sm" disabled={submitting === t.id} onClick={() => handleSyncWhatsapp(t)}>
+                              {submitting === t.id ? "Syncing…" : "Sync status"}
                             </button>
                           )}
                           <button className="btn sm" onClick={() => openEdit(t)}>Edit</button>

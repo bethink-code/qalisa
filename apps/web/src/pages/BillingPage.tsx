@@ -6,10 +6,6 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function fmtCredName(cred: Credential): string {
-  const name = cred.config.fromAddress ?? cred.config.domain ?? cred.config.clientId ?? cred.config.phoneNumberId;
-  return typeof name === "string" ? name : "—";
-}
 
 const PROVIDER_LABELS: Record<string, string> = {
   smsportal: "SMSPortal",
@@ -71,7 +67,6 @@ export function BillingPage() {
                           {CHANNEL_LABELS[cred.channel] ?? cred.channel}
                         </span>
                       </div>
-                      <div style={{ fontSize: 12, color: "var(--graphite)", marginTop: 2 }}>{fmtCredName(cred)}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{

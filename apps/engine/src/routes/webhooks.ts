@@ -1,7 +1,7 @@
 import { getAdapter } from "@qalisa/adapters";
 import { updateDelivery } from "@qalisa/core";
 import { db } from "@qalisa/db";
-import { providerCredentials } from "@qalisa/db/schema";
+import { providerCredentials, templates } from "@qalisa/db/schema";
 import type { Channel, Provider } from "@qalisa/shared";
 import { and, eq } from "drizzle-orm";
 import { Router } from "express";
@@ -172,8 +172,55 @@ webhooksRouter.get(
   }),
 );
 
+/** Process message_template_status_update changes — call only after HMAC is verified. */
+async function handleTemplateStatusUpdates(tenantId: string, body: unknown): Promise<number> {
+  const b = body as Record<string, unknown>;
+  if (b["object"] !== "whatsapp_business_account") return 0;
+  const entries = b["entry"] as Record<string, unknown>[] | undefined;
+  if (!Array.isArray(entries)) return 0;
+
+  let count = 0;
+  for (const entry of entries) {
+    const changes = entry["changes"] as Record<string, unknown>[] | undefined;
+    if (!Array.isArray(changes)) continue;
+    for (const change of changes) {
+      if (change["field"] !== "message_template_status_update") continue;
+      const value = change["value"] as Record<string, unknown> | undefined;
+      if (!value) continue;
+
+      const event = String(value["event"] ?? "");
+      const metaTemplateName = String(value["message_template_name"] ?? "");
+      const reason = typeof value["reason"] === "string" ? value["reason"] : null;
+      if (!metaTemplateName || !event) continue;
+
+      let newStatus: "approved" | "rejected" | null = null;
+      if (event === "APPROVED") newStatus = "approved";
+      else if (event === "REJECTED" || event === "DISABLED") newStatus = "rejected";
+
+      if (!newStatus) continue;
+
+      const rows = await db
+        .update(templates)
+        .set({
+          whatsappStatus: newStatus,
+          ...(newStatus === "rejected" && reason ? { whatsappRejectionReason: reason } : {}),
+        })
+        .where(
+          and(
+            eq(templates.tenantId, tenantId),
+            eq(templates.metaTemplateName, metaTemplateName),
+          ),
+        )
+        .returning({ id: templates.id });
+
+      count += rows.length;
+    }
+  }
+  return count;
+}
+
 /**
- * POST /v1/webhooks/meta/:tenantId — Meta delivery status callbacks.
+ * POST /v1/webhooks/meta/:tenantId — Meta delivery status and template status callbacks.
  * Signature is verified via X-Hub-Signature-256 when config.appSecret is set.
  */
 webhooksRouter.post(
@@ -183,12 +230,15 @@ webhooksRouter.post(
     if (!tenantId) { res.status(400).json({ error: "Missing tenantId" }); return; }
 
     try {
+      // handleProviderWebhook verifies the HMAC signature before processing.
       const processed = await handleProviderWebhook(tenantId, "whatsapp", "meta_cloud_api", {
         headers: req.headers as Record<string, string | string[] | undefined>,
         body: req.body,
         rawBody: req.rawBody,
       });
-      res.status(200).json({ processed });
+      // Signature verified — now process template approval/rejection events.
+      const templateUpdates = await handleTemplateStatusUpdates(tenantId, req.body);
+      res.status(200).json({ processed, templateUpdates });
     } catch (err) {
       const code = (err as { statusCode?: number }).statusCode;
       if (code === 404) { res.status(404).json({ error: (err as Error).message }); return; }

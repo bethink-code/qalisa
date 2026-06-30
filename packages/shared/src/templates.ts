@@ -18,3 +18,11 @@ export const updateTemplateSchema = z.object({
 });
 
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
+
+export const WA_CATEGORIES = ["MARKETING", "UTILITY", "AUTHENTICATION"] as const;
+export type WaCategory = (typeof WA_CATEGORIES)[number];
+
+export const submitWhatsappSchema = z.object({
+  category: z.enum(WA_CATEGORIES),
+  language: z.string().min(2).optional().default("en"),
+});

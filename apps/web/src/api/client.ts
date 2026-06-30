@@ -94,6 +94,10 @@ export interface Template {
   body: string;
   variables: Record<string, string>;
   whatsappStatus: "pending" | "approved" | "rejected" | null;
+  metaTemplateName: string | null;
+  whatsappCategory: string | null;
+  whatsappLanguage: string | null;
+  whatsappRejectionReason: string | null;
   createdAt: string;
 }
 
@@ -127,5 +131,10 @@ export const api = {
     update: (id: string, body: unknown) =>
       apiFetch<Template>(`/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => apiFetch<void>(`/templates/${id}`, { method: "DELETE" }),
+    submitWhatsapp: (id: string, body: { category: string; language?: string }) =>
+      apiFetch<Template>(`/templates/${id}/submit-whatsapp`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   },
 };

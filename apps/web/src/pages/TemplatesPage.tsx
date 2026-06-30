@@ -3,16 +3,19 @@ import { type Template, api } from "../api/client";
 
 type Channel = "email" | "sms" | "whatsapp";
 const CHANNEL_LABELS: Record<Channel, string> = { email: "Email", sms: "SMS", whatsapp: "WhatsApp" };
+const WA_CATEGORIES = ["MARKETING", "UTILITY", "AUTHENTICATION"] as const;
 
 function waStatusPill(s: Template["whatsappStatus"]) {
   if (s === "approved") return <span className="pill ok">approved</span>;
   if (s === "rejected") return <span className="pill error">rejected</span>;
-  if (s === "pending") return <span className="pill warn">pending</span>;
-  return null;
+  if (s === "pending") return <span className="pill warn">pending approval</span>;
+  return <span className="pill muted">not submitted</span>;
 }
 
 interface FormState { channel: Channel; name: string; body: string }
 const BLANK: FormState = { channel: "email", name: "", body: "" };
+
+interface SubmitState { category: string; language: string }
 
 export function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -22,6 +25,9 @@ export function TemplatesPage() {
   const [form, setForm] = useState<FormState>(BLANK);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState<string | null>(null); // templateId being submitted
+  const [submitForms, setSubmitForms] = useState<Record<string, SubmitState>>({});
+  const [submitErrors, setSubmitErrors] = useState<Record<string, string>>({});
 
   function reload() {
     api.templates.list().then(setTemplates).finally(() => setLoading(false));
@@ -72,6 +78,27 @@ export function TemplatesPage() {
     if (!confirm("Delete this template?")) return;
     await api.templates.delete(id);
     reload();
+  }
+
+  function openSubmit(t: Template) {
+    setSubmitForms((prev) => ({
+      ...prev,
+      [t.id]: { category: t.whatsappCategory ?? "MARKETING", language: t.whatsappLanguage ?? "en" },
+    }));
+    setSubmitting(t.id);
+  }
+
+  async function handleSubmitWhatsapp(id: string) {
+    const sf = submitForms[id];
+    if (!sf) return;
+    setSubmitErrors((prev) => ({ ...prev, [id]: "" }));
+    try {
+      const updated = await api.templates.submitWhatsapp(id, sf);
+      setTemplates((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      setSubmitting(null);
+    } catch (err) {
+      setSubmitErrors((prev) => ({ ...prev, [id]: err instanceof Error ? err.message : "Submission failed" }));
+    }
   }
 
   return (
@@ -164,30 +191,79 @@ export function TemplatesPage() {
               </thead>
               <tbody>
                 {templates.map((t) => (
-                  <tr key={t.id}>
-                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
-                    <td><span className="pill muted">{CHANNEL_LABELS[t.channel]}</span></td>
-                    <td
-                      style={{
-                        maxWidth: 340,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        color: "var(--graphite)",
-                        fontSize: 13,
-                      }}
-                      title={t.body}
-                    >
-                      {t.body}
-                    </td>
-                    <td>{waStatusPill(t.whatsappStatus)}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                        <button className="btn sm" onClick={() => openEdit(t)}>Edit</button>
-                        <button className="btn sm danger" onClick={() => handleDelete(t.id)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={t.id}>
+                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
+                      <td><span className="pill muted">{CHANNEL_LABELS[t.channel]}</span></td>
+                      <td
+                        style={{
+                          maxWidth: 340,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          color: "var(--graphite)",
+                          fontSize: 13,
+                        }}
+                        title={t.body}
+                      >
+                        {t.body}
+                      </td>
+                      <td>{t.channel === "whatsapp" ? waStatusPill(t.whatsappStatus) : null}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          {t.channel === "whatsapp" && t.whatsappStatus !== "approved" && (
+                            <button
+                              className="btn sm"
+                              onClick={() => submitting === t.id ? setSubmitting(null) : openSubmit(t)}
+                            >
+                              {submitting === t.id ? "Cancel" : "Submit to Meta"}
+                            </button>
+                          )}
+                          <button className="btn sm" onClick={() => openEdit(t)}>Edit</button>
+                          <button className="btn sm danger" onClick={() => handleDelete(t.id)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {submitting === t.id && (
+                      <tr key={`${t.id}-submit`}>
+                        <td colSpan={5} style={{ background: "var(--surface-raised, #f9f9f9)", padding: "12px 16px" }}>
+                          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                            <div className="field" style={{ margin: 0 }}>
+                              <label style={{ fontSize: 12 }}>Category</label>
+                              <select
+                                className="select"
+                                style={{ fontSize: 13 }}
+                                value={submitForms[t.id]?.category ?? "MARKETING"}
+                                onChange={(e) =>
+                                  setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, category: e.target.value } }))
+                                }
+                              >
+                                {WA_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div className="field" style={{ margin: 0 }}>
+                              <label style={{ fontSize: 12 }}>Language</label>
+                              <input
+                                className="input"
+                                style={{ fontSize: 13, width: 80 }}
+                                value={submitForms[t.id]?.language ?? "en"}
+                                onChange={(e) =>
+                                  setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, language: e.target.value } }))
+                                }
+                                placeholder="en"
+                              />
+                            </div>
+                            <button className="btn primary sm" onClick={() => handleSubmitWhatsapp(t.id)}>
+                              Submit
+                            </button>
+                            {submitErrors[t.id] && (
+                              <span style={{ color: "var(--status-red)", fontSize: 13 }}>{submitErrors[t.id]}</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>

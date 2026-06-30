@@ -12,5 +12,9 @@ export const templates = pgTable("templates", {
   body: text().notNull(),
   variables: jsonb().$type<Record<string, unknown>>().notNull().default({}),
   whatsappStatus: waTemplateStatusEnum(), // WhatsApp only
+  metaTemplateName: text(), // name submitted to Meta (lowercase_underscore)
+  whatsappCategory: text(), // MARKETING | UTILITY | AUTHENTICATION
+  whatsappLanguage: text().default("en"), // BCP-47 language code
+  whatsappRejectionReason: text(), // populated when Meta rejects
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

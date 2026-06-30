@@ -7,6 +7,7 @@ const STATIC_TOP = [
 ];
 
 const STATIC_BOTTOM = [
+  { to: "/billing", label: "Billing" },
   { to: "/templates", label: "Templates" },
   { to: "/credentials", label: "Credentials" },
 ];

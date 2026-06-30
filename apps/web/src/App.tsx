@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { getApiKey } from "./api/client";
 import { Shell } from "./layout/Shell";
+import { BillingPage } from "./pages/BillingPage";
 import { ChannelMessagesPage } from "./pages/ChannelMessagesPage";
 import { CredentialsPage } from "./pages/CredentialsPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -28,6 +29,7 @@ export function App() {
         <Route path="/credentials" element={<CredentialsPage />} />
         <Route path="/messages" element={<Navigate to="/messages/sms" replace />} />
         <Route path="/messages/:channel" element={<ChannelMessagesPage />} />
+        <Route path="/billing" element={<BillingPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
       </Route>
     </Routes>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { type Message, api } from "../api/client";
+import { type Message, type Template, api } from "../api/client";
 
 type Channel = "sms" | "email" | "whatsapp";
 
@@ -93,14 +93,40 @@ function MessageDrawer({ message, onClose }: { message: Message; onClose: () => 
   );
 }
 
+function varNamesInOrder(body: string): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const [, name] of body.matchAll(/\{\{(\w+)\}\}/g)) {
+    if (name && !seen.has(name)) { seen.add(name); names.push(name); }
+  }
+  return names;
+}
+
 function SendForm({ channel, onSent }: { channel: Channel; onSent: () => void }) {
   const [countryCode, setCountryCode] = useState("+27");
   const [number, setNumber] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [variables, setVariables] = useState<Record<string, string>>({});
+  const [waTemplates, setWaTemplates] = useState<Template[]>([]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (channel !== "whatsapp") return;
+    api.templates.list()
+      .then(all => setWaTemplates(all.filter(t => t.channel === "whatsapp" && t.whatsappStatus === "approved")))
+      .catch(() => {});
+  }, [channel]);
+
+  useEffect(() => {
+    setTemplateId(""); setVariables({}); setBody(""); setSubject(""); setSent(""); setError("");
+  }, [channel]);
+
+  const selectedTemplate = waTemplates.find(t => t.id === templateId) ?? null;
+  const varNames = selectedTemplate ? varNamesInOrder(selectedTemplate.body) : [];
 
   const trimmed = number.replace(/\s/g, "");
   const to = channel === "email"
@@ -113,9 +139,12 @@ function SendForm({ channel, onSent }: { channel: Channel; onSent: () => void })
     e.preventDefault();
     setSending(true); setSent(""); setError("");
     try {
-      const r = await api.messages.send({ channel, to, ...(channel === "email" && subject ? { subject } : {}), body });
+      const payload = channel === "whatsapp"
+        ? { channel, to, templateId, variables }
+        : { channel, to, ...(channel === "email" && subject ? { subject } : {}), body };
+      const r = await api.messages.send(payload);
       setSent(r.messageId);
-      setNumber(""); setSubject(""); setBody("");
+      setNumber(""); setSubject(""); setBody(""); setTemplateId(""); setVariables({});
       onSent();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send");
@@ -147,13 +176,51 @@ function SendForm({ channel, onSent }: { channel: Channel; onSent: () => void })
             <input className="input" value={subject} onChange={e => setSubject(e.target.value)} />
           </div>
         )}
-        <div className="field">
-          <label>Message</label>
-          <textarea className="textarea" rows={3} value={body} onChange={e => setBody(e.target.value)} required />
-        </div>
+        {channel === "whatsapp" ? (
+          <>
+            <div className="field">
+              <label>Template</label>
+              {waTemplates.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--graphite)", margin: 0 }}>
+                  No approved WhatsApp templates yet — submit a template for Meta review first.
+                </p>
+              ) : (
+                <select className="select" value={templateId} onChange={e => { setTemplateId(e.target.value); setVariables({}); }} required>
+                  <option value="">— select a template —</option>
+                  {waTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+            </div>
+            {varNames.map(name => (
+              <div className="field" key={name}>
+                <label>{name}</label>
+                <input
+                  className="input"
+                  value={variables[name] ?? ""}
+                  onChange={e => setVariables(v => ({ ...v, [name]: e.target.value }))}
+                  placeholder={`Value for {{${name}}}`}
+                  required
+                />
+              </div>
+            ))}
+            {selectedTemplate && (
+              <div style={{ fontSize: 12, color: "var(--graphite)", marginBottom: 12, padding: "8px 10px", background: "var(--surface-alt, #f5f5f5)", borderRadius: 4 }}>
+                <strong>Preview:</strong>{" "}
+                {selectedTemplate.body.replace(/\{\{(\w+)\}\}/g, (_, k: string) => variables[k] ? `[${variables[k]}]` : `{{${k}}}`)}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="field">
+            <label>Message</label>
+            <textarea className="textarea" rows={3} value={body} onChange={e => setBody(e.target.value)} required />
+          </div>
+        )}
         {error && <div style={{ color: "var(--status-red)", fontSize: 13, marginBottom: 12 }}>{error}</div>}
         {sent && <div style={{ color: "var(--status-green)", fontSize: 13, marginBottom: 12 }}>Queued — ID: <span style={{ fontFamily: "monospace" }}>{sent}</span></div>}
-        <button className="btn primary" disabled={sending}>{sending ? "Sending…" : "Send"}</button>
+        <button className="btn primary" disabled={sending || (channel === "whatsapp" && waTemplates.length === 0)}>
+          {sending ? "Sending…" : "Send"}
+        </button>
       </form>
     </div>
   );

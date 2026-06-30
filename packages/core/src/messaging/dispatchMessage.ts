@@ -13,6 +13,9 @@ export interface DispatchInput {
   to: string;
   subject?: string;
   resolvedBody: string;
+  metaTemplateName?: string;
+  whatsappLanguage?: string;
+  templateParams?: string[];
 }
 
 /**
@@ -27,7 +30,7 @@ export async function dispatchMessage(
   deps: { db: Db; vault: Vault },
 ): Promise<void> {
   const { db, vault } = deps;
-  const { messageId, channel, provider, credentialId, to, subject, resolvedBody } = input;
+  const { messageId, channel, provider, credentialId, to, subject, resolvedBody, metaTemplateName, whatsappLanguage, templateParams } = input;
 
   // Fetch the credential (tenant-scoped — vault also enforces this, but belt+braces).
   const [cred] = await db
@@ -52,7 +55,7 @@ export async function dispatchMessage(
     const secret = await vault.resolveSecret(cred.secretRef, tenantId);
     const adapter = getAdapter(channel, provider);
     const result = await adapter.send(
-      { channel, to, subject, body: resolvedBody, messageId },
+      { channel, to, subject, body: resolvedBody, messageId, metaTemplateName, whatsappLanguage, templateParams },
       { config: cred.config, secret },
     );
 

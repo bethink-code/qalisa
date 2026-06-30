@@ -66,17 +66,37 @@ export const metaAdapter: ChannelAdapter = {
     const phoneNumberId = String(config.phoneNumberId ?? "");
     const token = secret.reveal();
 
+    const payload = msg.metaTemplateName
+      ? {
+          messaging_product: "whatsapp",
+          to: msg.to,
+          type: "template",
+          template: {
+            name: msg.metaTemplateName,
+            language: { code: msg.whatsappLanguage ?? "en" },
+            ...(msg.templateParams && msg.templateParams.length > 0
+              ? {
+                  components: [{
+                    type: "body",
+                    parameters: msg.templateParams.map((text) => ({ type: "text", text })),
+                  }],
+                }
+              : {}),
+          },
+        }
+      : {
+          messaging_product: "whatsapp",
+          to: msg.to,
+          type: "text",
+          text: { body: msg.body ?? "" },
+        };
+
     let res: Response;
     try {
       res = await fetch(`${GRAPH_URL}/${phoneNumberId}/messages`, {
         method: "POST",
         headers: { ...bearer(token), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: msg.to,
-          type: "text",
-          text: { body: msg.body ?? "" },
-        }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {

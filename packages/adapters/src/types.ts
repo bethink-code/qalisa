@@ -23,6 +23,12 @@ export interface OutboundMessage {
   variables?: Record<string, string>;
   /** Our internal message ID — passed as provider customerId where supported for reliable DLR matching. */
   messageId?: string;
+  /** For WhatsApp template sends: the approved Meta template name (lowercase_underscore). */
+  metaTemplateName?: string;
+  /** BCP-47 language code for the Meta template (e.g. "en"). */
+  whatsappLanguage?: string;
+  /** Positional parameter values {{1}}, {{2}}… in the order they appear in the template body. */
+  templateParams?: string[];
 }
 
 export interface SendResult {

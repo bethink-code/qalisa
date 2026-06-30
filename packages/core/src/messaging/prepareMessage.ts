@@ -21,6 +21,10 @@ export interface PrepareReady {
   to: string;
   subject?: string;
   resolvedBody: string;
+  /** Populated for approved WhatsApp template sends. */
+  metaTemplateName?: string;
+  whatsappLanguage?: string;
+  templateParams?: string[];
 }
 
 export interface PrepareFailed {
@@ -181,12 +185,23 @@ export async function prepareMessage(
   const messageId = msg.id;
 
   let resolvedBody = body ?? "";
+  let metaTemplateName: string | undefined;
+  let whatsappLanguage: string | undefined;
+  let templateParams: string[] | undefined;
+
   if (templateId) {
     const [tmpl] = await db
-      .select({ body: templates.body })
+      .select({
+        body: templates.body,
+        channel: templates.channel,
+        whatsappStatus: templates.whatsappStatus,
+        metaTemplateName: templates.metaTemplateName,
+        whatsappLanguage: templates.whatsappLanguage,
+      })
       .from(templates)
       .where(and(eq(templates.id, templateId), eq(templates.tenantId, tenantId)))
       .limit(1);
+
     if (!tmpl) {
       await db
         .update(messages)
@@ -194,7 +209,29 @@ export async function prepareMessage(
         .where(and(eq(messages.id, messageId), eq(messages.tenantId, tenantId)));
       return { status: "failed", messageId, error: "template not found" };
     }
+
+    // WhatsApp templates must be approved before sending.
+    if (tmpl.channel === "whatsapp" && tmpl.whatsappStatus !== "approved") {
+      await db
+        .update(messages)
+        .set({ status: "failed", error: "template not approved by Meta" })
+        .where(and(eq(messages.id, messageId), eq(messages.tenantId, tenantId)));
+      return { status: "failed", messageId, error: "template not approved by Meta" };
+    }
+
     resolvedBody = renderTemplate(tmpl.body, variables ?? {});
+
+    if (tmpl.channel === "whatsapp" && tmpl.metaTemplateName) {
+      metaTemplateName = tmpl.metaTemplateName;
+      whatsappLanguage = tmpl.whatsappLanguage ?? "en";
+      // Extract variable names in appearance order, map to values for positional params.
+      const seen = new Set<string>();
+      const varNames: string[] = [];
+      for (const [, name] of tmpl.body.matchAll(/\{\{(\w+)\}\}/g)) {
+        if (name && !seen.has(name)) { seen.add(name); varNames.push(name); }
+      }
+      templateParams = varNames.map((n) => variables?.[n] ?? "");
+    }
   }
 
   return {
@@ -206,6 +243,9 @@ export async function prepareMessage(
     to,
     subject,
     resolvedBody,
+    metaTemplateName,
+    whatsappLanguage,
+    templateParams,
   };
 }
 

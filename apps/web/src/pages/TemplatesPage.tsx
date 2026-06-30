@@ -4,7 +4,6 @@ import { TemplateBuilder } from "../components/TemplateBuilder";
 
 type Channel = "email" | "sms" | "whatsapp";
 const CHANNEL_LABELS: Record<Channel, string> = { email: "Email", sms: "SMS", whatsapp: "WhatsApp" };
-const WA_CATEGORIES = ["MARKETING", "UTILITY", "AUTHENTICATION"] as const;
 
 function waStatusPill(s: Template["whatsappStatus"]) {
   if (s === "approved") return <span className="pill ok">approved</span>;
@@ -107,10 +106,6 @@ function ChannelPicker({ onPick, onCancel }: PickerProps) {
   );
 }
 
-// ── Submit state ──────────────────────────────────────────────────────────────
-
-interface SubmitState { category: string; language: string }
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type FormMode = "picker" | "whatsapp" | "simple-email" | "simple-sms" | "edit";
@@ -123,8 +118,7 @@ export function TemplatesPage() {
   const [editForm, setEditForm] = useState({ name: "", body: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
-  const [submitting, setSubmitting] = useState<string | null>(null);
-  const [submitForms, setSubmitForms] = useState<Record<string, SubmitState>>({});
+  const [submitting, setSubmitting] = useState<string | null>(null); // templateId currently being submitted
   const [submitErrors, setSubmitErrors] = useState<Record<string, string>>({});
 
   function reload() {
@@ -167,24 +161,19 @@ export function TemplatesPage() {
     reload();
   }
 
-  function openSubmit(t: Template) {
-    setSubmitForms((prev) => ({
-      ...prev,
-      [t.id]: { category: t.whatsappCategory ?? "MARKETING", language: t.whatsappLanguage ?? "en" },
-    }));
+  async function handleSubmitWhatsapp(t: Template) {
     setSubmitting(t.id);
-  }
-
-  async function handleSubmitWhatsapp(id: string) {
-    const sf = submitForms[id];
-    if (!sf) return;
-    setSubmitErrors((prev) => ({ ...prev, [id]: "" }));
+    setSubmitErrors((prev) => ({ ...prev, [t.id]: "" }));
     try {
-      const updated = await api.templates.submitWhatsapp(id, sf);
-      setTemplates((prev) => prev.map((t) => (t.id === id ? updated : t)));
-      setSubmitting(null);
+      const updated = await api.templates.submitWhatsapp(t.id, {
+        category: t.whatsappCategory ?? "MARKETING",
+        language: t.whatsappLanguage ?? "en",
+      });
+      setTemplates((prev) => prev.map((r) => (r.id === t.id ? updated : r)));
     } catch (err) {
-      setSubmitErrors((prev) => ({ ...prev, [id]: err instanceof Error ? err.message : "Submission failed" }));
+      setSubmitErrors((prev) => ({ ...prev, [t.id]: err instanceof Error ? err.message : "Submission failed" }));
+    } finally {
+      setSubmitting(null);
     }
   }
 
@@ -293,9 +282,10 @@ export function TemplatesPage() {
                           {t.channel === "whatsapp" && (t.whatsappStatus === null || t.whatsappStatus === "rejected") && (
                             <button
                               className="btn sm"
-                              onClick={() => submitting === t.id ? setSubmitting(null) : openSubmit(t)}
+                              disabled={submitting === t.id}
+                              onClick={() => handleSubmitWhatsapp(t)}
                             >
-                              {submitting === t.id ? "Cancel" : t.whatsappStatus === "rejected" ? "Resubmit to Meta" : "Submit to Meta"}
+                              {submitting === t.id ? "Submitting…" : t.whatsappStatus === "rejected" ? "Resubmit to Meta" : "Submit to Meta"}
                             </button>
                           )}
                           <button className="btn sm" onClick={() => openEdit(t)}>Edit</button>
@@ -303,36 +293,10 @@ export function TemplatesPage() {
                         </div>
                       </td>
                     </tr>
-                    {submitting === t.id && (
-                      <tr key={`${t.id}-submit`}>
-                        <td colSpan={5} style={{ background: "var(--surface-raised, #f9f9f9)", padding: "12px 16px" }}>
-                          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-                            <div className="field" style={{ margin: 0 }}>
-                              <label style={{ fontSize: 12 }}>Category</label>
-                              <select
-                                className="select"
-                                style={{ fontSize: 13 }}
-                                value={submitForms[t.id]?.category ?? "MARKETING"}
-                                onChange={(e) => setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, category: e.target.value } }))}
-                              >
-                                {WA_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                              </select>
-                            </div>
-                            <div className="field" style={{ margin: 0 }}>
-                              <label style={{ fontSize: 12 }}>Language</label>
-                              <input
-                                className="input"
-                                style={{ fontSize: 13, width: 80 }}
-                                value={submitForms[t.id]?.language ?? "en"}
-                                onChange={(e) => setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, language: e.target.value } }))}
-                                placeholder="en"
-                              />
-                            </div>
-                            <button className="btn primary sm" onClick={() => handleSubmitWhatsapp(t.id)}>Submit</button>
-                            {submitErrors[t.id] && (
-                              <span style={{ color: "var(--status-red)", fontSize: 13 }}>{submitErrors[t.id]}</span>
-                            )}
-                          </div>
+                    {submitErrors[t.id] && (
+                      <tr key={`${t.id}-err`}>
+                        <td colSpan={5} style={{ padding: "6px 16px" }}>
+                          <span style={{ color: "var(--status-red)", fontSize: 13 }}>{submitErrors[t.id]}</span>
                         </td>
                       </tr>
                     )}

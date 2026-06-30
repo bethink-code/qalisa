@@ -106,6 +106,9 @@ export const smsportalAdapter: ChannelAdapter = {
     // "messages" is a COUNT not an array; the batch reference is "eventId".
     const raw = (await res.json()) as {
       eventId?: number;
+      cost?: number;
+      parts?: number;
+      remainingBalance?: number;
       errorReport?: { faults?: unknown[] };
     };
 
@@ -117,7 +120,12 @@ export const smsportalAdapter: ChannelAdapter = {
     // Prefer our own messageId (echoed back as customerId in DLRs) for matching.
     // Fall back to SMSPortal's eventId if messageId wasn't supplied.
     const providerMessageId = msg.messageId ?? (raw.eventId != null ? String(raw.eventId) : "");
-    return { providerMessageId };
+    return {
+      providerMessageId,
+      ...(raw.cost !== undefined ? { cost: raw.cost } : {}),
+      ...(raw.parts !== undefined ? { parts: raw.parts } : {}),
+      ...(raw.remainingBalance !== undefined ? { remainingBalance: raw.remainingBalance } : {}),
+    };
   },
 
   async parseWebhook(req: RawWebhook): Promise<DeliveryEvent[]> {

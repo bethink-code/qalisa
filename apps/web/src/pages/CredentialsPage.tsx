@@ -391,6 +391,11 @@ export function CredentialsPage() {
                               </div>
                               <div className="cred-meta">
                                 {statusPill(existing.status)}
+                                {existing.remainingBalance !== null && existing.remainingBalance !== undefined && (
+                                  <span style={{ marginLeft: 10, fontSize: 12, color: existing.remainingBalance <= 10 ? "var(--status-red)" : "var(--graphite)" }}>
+                                    {existing.remainingBalance.toLocaleString()} credits remaining
+                                  </span>
+                                )}
                                 {testResult[existing.id] && (
                                   <span style={{ marginLeft: 10, fontSize: 12, color: "var(--graphite)" }}>
                                     {testResult[existing.id]!.detail}

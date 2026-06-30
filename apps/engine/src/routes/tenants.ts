@@ -39,8 +39,8 @@ tenantsRouter.post(
       res.status(404).json({ error: "Tenant not found" });
       return;
     }
-    if (tenant.status !== "active") {
-      res.status(403).json({ error: "API keys can only be issued to active tenants" });
+    if (tenant.status === "suspended") {
+      res.status(403).json({ error: "API keys cannot be issued to suspended tenants" });
       return;
     }
 

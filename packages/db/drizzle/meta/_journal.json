@@ -43,6 +43,13 @@
       "when": 1782742000000,
       "tag": "0005_webhook_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782801658373,
+      "tag": "0006_pale_bulldozer",
+      "breakpoints": true
     }
   ]
 }

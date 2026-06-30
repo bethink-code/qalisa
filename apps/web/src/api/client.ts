@@ -66,6 +66,8 @@ export interface Credential {
   config: Record<string, unknown>;
   status: "unverified" | "healthy" | "failing";
   lastHealthCheckAt: string | null;
+  remainingBalance: number | null;
+  balanceUpdatedAt: string | null;
   createdAt: string;
 }
 
@@ -78,6 +80,8 @@ export interface Message {
   status: "queued" | "sent" | "delivered" | "failed";
   providerMessageId: string | null;
   error: string | null;
+  cost: number | null;
+  parts: number | null;
   createdAt: string;
   sentAt: string | null;
   deliveredAt: string | null;

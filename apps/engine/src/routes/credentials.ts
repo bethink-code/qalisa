@@ -21,6 +21,8 @@ const SAFE_COLUMNS = {
   status: providerCredentials.status,
   lastHealthCheckAt: providerCredentials.lastHealthCheckAt,
   tokenExpiresAt: providerCredentials.tokenExpiresAt,
+  remainingBalance: providerCredentials.remainingBalance,
+  balanceUpdatedAt: providerCredentials.balanceUpdatedAt,
   createdAt: providerCredentials.createdAt,
 };
 

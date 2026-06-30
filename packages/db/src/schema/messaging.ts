@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, real, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { channelEnum, messageStatusEnum, providerEnum } from "./enums";
 import { templates } from "./templates";
 import { tenants } from "./tenancy";
@@ -20,6 +20,8 @@ export const messages = pgTable(
     providerMessageId: text(),
     idempotencyKey: text(),
     error: text(),
+    cost: real(),
+    parts: integer(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp({ withTimezone: true }),
     deliveredAt: timestamp({ withTimezone: true }),

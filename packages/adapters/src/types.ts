@@ -27,6 +27,12 @@ export interface OutboundMessage {
 
 export interface SendResult {
   providerMessageId: string;
+  /** Credits consumed by this send (provider-specific unit). Only populated when the provider returns it. */
+  cost?: number;
+  /** Number of SMS parts (multi-part messages consume multiple credits). */
+  parts?: number;
+  /** Provider account balance remaining after this send. */
+  remainingBalance?: number;
 }
 
 export interface DeliveryEvent {

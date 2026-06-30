@@ -80,6 +80,12 @@ function MessageDrawer({ message, onClose }: { message: Message; onClose: () => 
           </Field>
           <Field label="Sent">{fmtDate(message.sentAt)}</Field>
           <Field label="Delivered">{fmtDate(message.deliveredAt)}</Field>
+          {message.parts !== null && message.parts !== undefined && (
+            <Field label="Parts">{message.parts}</Field>
+          )}
+          {message.cost !== null && message.cost !== undefined && (
+            <Field label="Cost">{message.cost} {message.cost === 1 ? "credit" : "credits"}</Field>
+          )}
           <Field label="Message ID"><code style={{ fontSize: 11, wordBreak: "break-all", color: "var(--graphite)" }}>{message.id}</code></Field>
         </div>
       </div>

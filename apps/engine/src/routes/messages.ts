@@ -86,6 +86,8 @@ messagesRouter.get(
         status: messages.status,
         providerMessageId: messages.providerMessageId,
         error: messages.error,
+        cost: messages.cost,
+        parts: messages.parts,
         createdAt: messages.createdAt,
         sentAt: messages.sentAt,
         deliveredAt: messages.deliveredAt,

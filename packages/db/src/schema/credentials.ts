@@ -1,4 +1,4 @@
-import { jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, real, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { channelEnum, credStatusEnum, providerEnum } from "./enums";
 import { tenants } from "./tenancy";
 
@@ -21,6 +21,8 @@ export const providerCredentials = pgTable(
     status: credStatusEnum().notNull().default("unverified"),
     lastHealthCheckAt: timestamp({ withTimezone: true }),
     tokenExpiresAt: timestamp({ withTimezone: true }),
+    remainingBalance: real(),
+    balanceUpdatedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [unique().on(t.tenantId, t.channel, t.provider)],

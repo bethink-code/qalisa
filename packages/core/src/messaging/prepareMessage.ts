@@ -78,7 +78,11 @@ export async function prepareMessage(
 
   // Deterministic credential pick: oldest-first gives stable primary/fallback behaviour.
   const [cred] = await db
-    .select({ id: providerCredentials.id, provider: providerCredentials.provider })
+    .select({
+      id: providerCredentials.id,
+      provider: providerCredentials.provider,
+      remainingBalance: providerCredentials.remainingBalance,
+    })
     .from(providerCredentials)
     .where(
       and(
@@ -93,6 +97,12 @@ export async function prepareMessage(
     throw Object.assign(
       new Error(`No healthy credential configured for channel '${channel}'`),
       { statusCode: 422 },
+    );
+  }
+  if (cred.remainingBalance !== null && cred.remainingBalance <= 0) {
+    throw Object.assign(
+      new Error(`Insufficient credit balance for channel '${channel}'`),
+      { statusCode: 402 },
     );
   }
 

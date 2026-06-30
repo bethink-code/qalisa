@@ -58,8 +58,21 @@ export async function dispatchMessage(
 
     await db
       .update(messages)
-      .set({ status: "sent", providerMessageId: result.providerMessageId, sentAt: new Date() })
+      .set({
+        status: "sent",
+        providerMessageId: result.providerMessageId,
+        sentAt: new Date(),
+        ...(result.cost !== undefined ? { cost: result.cost } : {}),
+        ...(result.parts !== undefined ? { parts: result.parts } : {}),
+      })
       .where(and(eq(messages.id, messageId), eq(messages.tenantId, tenantId)));
+
+    if (result.remainingBalance !== undefined) {
+      await db
+        .update(providerCredentials)
+        .set({ remainingBalance: result.remainingBalance, balanceUpdatedAt: new Date() })
+        .where(and(eq(providerCredentials.id, credentialId), eq(providerCredentials.tenantId, tenantId)));
+    }
 
     await db.insert(usageEvents).values({ tenantId, channel, messageId });
   } catch (err) {

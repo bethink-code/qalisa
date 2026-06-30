@@ -180,13 +180,13 @@ describe("parseWebhook", () => {
     expect(events[0]!.providerMessageId).toBe("wamid.abc");
   });
 
-  it("maps 'read' to delivered", async () => {
+  it("maps 'read' to read", async () => {
     const body = {
       ...deliveredPayload,
       entry: [{ ...deliveredPayload.entry[0]!, changes: [{ field: "messages", value: { statuses: [{ id: "wamid.x", status: "read", timestamp: "1", recipient_id: "x" }] } }] }],
     };
     const events = await metaAdapter.parseWebhook(makeRequest(body), signedCreds);
-    expect(events[0]!.status).toBe("delivered");
+    expect(events[0]!.status).toBe("read");
   });
 
   it("parses a sent event", async () => {

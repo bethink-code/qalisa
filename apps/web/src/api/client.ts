@@ -77,7 +77,7 @@ export interface Message {
   provider: "mailgun" | "mailjet" | "smsportal" | "meta_cloud_api";
   to: string;
   body: string;
-  status: "queued" | "sent" | "delivered" | "failed";
+  status: "queued" | "sent" | "delivered" | "read" | "failed";
   providerMessageId: string | null;
   error: string | null;
   cost: number | null;
@@ -85,6 +85,7 @@ export interface Message {
   createdAt: string;
   sentAt: string | null;
   deliveredAt: string | null;
+  readAt: string | null;
 }
 
 export interface WaButton {

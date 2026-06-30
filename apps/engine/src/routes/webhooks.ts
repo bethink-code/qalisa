@@ -194,16 +194,26 @@ async function handleTemplateWebhooks(tenantId: string, body: unknown): Promise<
       if (field === "message_template_status_update") {
         const event = String(value["event"] ?? "").toUpperCase();
         const metaTemplateName = String(value["message_template_name"] ?? "");
-        const reason = typeof value["reason"] === "string" ? value["reason"] : null;
         if (!metaTemplateName || !event) continue;
 
+        // Prefer rejection_info (richer detail) over the top-level reason field.
+        const rejectionInfo = value["rejection_info"] as Record<string, string> | undefined;
+        const reason: string | null =
+          rejectionInfo?.["reason"]
+            ? [rejectionInfo["reason"], rejectionInfo["recommendation"]].filter(Boolean).join(" — ")
+            : typeof value["reason"] === "string" && value["reason"] !== "NONE"
+              ? value["reason"]
+              : null;
+
         // Map Meta events to our internal status.
-        // APPROVED / REINSTATED → approved
-        // REJECTED / DISABLED / FLAGGED / PAUSED → rejected
+        // APPROVED / REINSTATED / UNARCHIVED → approved
+        // REJECTED / DISABLED / FLAGGED / PAUSED / ARCHIVED / DELETED / PENDING_DELETION / LIMIT_EXCEEDED / LOCKED → rejected
         // PENDING / IN_APPEAL → pending (back in review after edit)
         const newStatus: "approved" | "rejected" | "pending" | null =
-          event === "APPROVED" || event === "REINSTATED" ? "approved"
-          : event === "REJECTED" || event === "DISABLED" || event === "FLAGGED" || event === "PAUSED" ? "rejected"
+          event === "APPROVED" || event === "REINSTATED" || event === "UNARCHIVED" ? "approved"
+          : event === "REJECTED" || event === "DISABLED" || event === "FLAGGED" || event === "PAUSED"
+            || event === "ARCHIVED" || event === "DELETED" || event === "PENDING_DELETION"
+            || event === "LIMIT_EXCEEDED" || event === "LOCKED" ? "rejected"
           : event === "PENDING" || event === "IN_APPEAL" ? "pending"
           : null;
 
@@ -213,7 +223,7 @@ async function handleTemplateWebhooks(tenantId: string, body: unknown): Promise<
           .update(templates)
           .set({
             whatsappStatus: newStatus,
-            whatsappRejectionReason: newStatus === "rejected" && reason ? reason : null,
+            whatsappRejectionReason: newStatus === "approved" ? null : reason,
           })
           .where(and(eq(templates.tenantId, tenantId), eq(templates.metaTemplateName, metaTemplateName)))
           .returning({ id: templates.id });
@@ -222,8 +232,12 @@ async function handleTemplateWebhooks(tenantId: string, body: unknown): Promise<
 
       if (field === "template_category_update") {
         // Meta has reclassified the template (e.g. UTILITY → MARKETING).
+        // Two variants:
+        //   advance-warning (24h before): correct_category = future category, new_category = current
+        //   completed change: new_category = new category, previous_category = old
         const metaTemplateName = String(value["message_template_name"] ?? "");
-        const newCategory = String(value["new_category"] ?? "");
+        // Use correct_category for advance-warning, fall back to new_category for completed change.
+        const newCategory = String(value["correct_category"] ?? value["new_category"] ?? "");
         if (!metaTemplateName || !newCategory) continue;
 
         const rows = await db

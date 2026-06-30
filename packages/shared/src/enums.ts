@@ -38,7 +38,7 @@ export const SUPPRESSION_REASONS = ["optout", "bounce", "complaint", "manual"] a
 export const suppressionReasonSchema = z.enum(SUPPRESSION_REASONS);
 export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
 
-export const MESSAGE_STATUSES = ["queued", "sent", "delivered", "failed"] as const;
+export const MESSAGE_STATUSES = ["queued", "sent", "delivered", "read", "failed"] as const;
 export const messageStatusSchema = z.enum(MESSAGE_STATUSES);
 export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 

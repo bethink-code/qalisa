@@ -98,9 +98,7 @@ interface PreviewProps {
   category: WaCategory | "";
   headerFormat: HeaderFormat;
   headerText: string;
-  headerHasVar: boolean;
-  headerVarName: string;
-  headerVarExample: string;
+  headerVarExamples: Record<string, string>;
   bodyText: string;
   bodyExamples: Record<string, string>;
   footerText: string;
@@ -135,10 +133,7 @@ function WaPreview(p: PreviewProps) {
       );
     }
     if (p.headerFormat === "TEXT") {
-      const hText = p.headerHasVar && p.headerVarName
-        ? p.headerText + (p.headerVarExample ? ` ${p.headerVarExample}` : ` [${p.headerVarName}]`)
-        : p.headerText;
-      return <div style={{ padding: "10px 14px 6px", fontWeight: 700, fontSize: 15, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{hText || <span style={{ color: "var(--graphite)", fontStyle: "italic" }}>Header text</span>}</div>;
+      return <div style={{ padding: "10px 14px 6px", fontWeight: 700, fontSize: 15, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{p.headerText ? resolveText(p.headerText, p.headerVarExamples) : <span style={{ color: "var(--graphite)", fontStyle: "italic" }}>Header text</span>}</div>;
     }
     const icons: Record<string, string> = { IMAGE: "🖼️", VIDEO: "🎬", DOCUMENT: "📄" };
     return (
@@ -241,9 +236,7 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
 
   const [headerFormat, setHeaderFormat] = useState<HeaderFormat>("NONE");
   const [headerText, setHeaderText] = useState("");
-  const [headerHasVar, setHeaderHasVar] = useState(false);
-  const [headerVarName, setHeaderVarName] = useState("");
-  const [headerVarExample, setHeaderVarExample] = useState("");
+  const [headerVarExamples, setHeaderVarExamples] = useState<Record<string, string>>({});
 
   const [bodyText, setBodyText] = useState("");
   const [bodyExamples, setBodyExamples] = useState<Record<string, string>>({});
@@ -272,11 +265,16 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
     if (showVarInsert) setTimeout(() => varInputRef.current?.focus(), 0);
   }, [showVarInsert]);
 
-  // Sync body examples when variables change
+  // Sync examples when variables change
   useEffect(() => {
     const varNames = extractVarNames(bodyText);
     setBodyExamples((prev) => Object.fromEntries(varNames.map((n) => [n, prev[n] ?? ""])));
   }, [bodyText]);
+
+  useEffect(() => {
+    const varNames = extractVarNames(headerText);
+    setHeaderVarExamples((prev) => Object.fromEntries(varNames.map((n) => [n, prev[n] ?? ""])));
+  }, [headerText]);
 
   function trackCursor(e: React.SyntheticEvent<HTMLTextAreaElement>) {
     cursorPosRef.current = e.currentTarget.selectionStart ?? e.currentTarget.value.length;
@@ -309,30 +307,39 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
     if (!category) return "Select a category";
     if (!name.trim()) return "Template name is required";
     if (!/^[a-z0-9_]+$/.test(name)) return "Name must be lowercase letters, numbers, and underscores only";
+    if (name.length > 512) return "Template name must be 512 characters or fewer";
     if (category !== "AUTHENTICATION") {
       if (!bodyText.trim()) return "Body text is required";
       if (bodyText.length > 1024) return "Body text must be 1024 characters or fewer";
       if (headerFormat === "TEXT" && headerText.length > 60) return "Header text must be 60 characters or fewer";
       if (footerText.length > 60) return "Footer must be 60 characters or fewer";
       if (/\{\{/.test(footerText)) return "Footer text cannot contain variables";
-      if (headerFormat === "TEXT" && headerHasVar && !headerVarName.trim()) return "Header variable name is required";
+      const headerVarList = extractVarNames(headerText);
+      if (headerVarList.length > 1) return "Header text supports at most one variable";
+      const hv = headerVarList[0];
+      if (hv && !headerVarExamples[hv]?.trim()) return `Sample value required for header variable {{${hv}}}`;
       const bodyVars = extractVarNames(bodyText);
       for (const v of bodyVars) {
         if (!bodyExamples[v]?.trim()) return `Sample value required for {{${v}}}`;
       }
-      if (headerHasVar && headerVarName && !headerVarExample.trim()) return "Sample value required for header variable";
       if (buttons.length > 10) return "Maximum 10 buttons allowed";
       for (const b of buttons) {
         if (!b.text.trim()) return "All buttons require label text";
         if (b.text.length > 25) return "Button text must be 25 characters or fewer";
         if (b.type === "URL" && !b.url.trim()) return "URL button requires a URL";
+        if (b.type === "URL" && b.url.length > 2000) return "URL must be 2000 characters or fewer";
         if (b.type === "PHONE_NUMBER" && !b.phoneNumber.trim()) return "Phone button requires a phone number";
+        if (b.type === "PHONE_NUMBER" && b.phoneNumber.length > 20) return "Phone number must be 20 characters or fewer";
         if (b.type === "URL" && b.urlHasVar && !b.urlExample.trim()) return "URL button variable requires a sample value";
       }
+      // Quick reply buttons must form a contiguous block — no non-QR button between them.
       const types = buttons.map((b) => b.type);
-      const qrIndices = types.map((t, i) => (t === "QUICK_REPLY" ? i : -1)).filter((i) => i >= 0);
-      for (let i = 1; i < qrIndices.length; i++) {
-        if (qrIndices[i]! - qrIndices[i - 1]! > 1) return "Quick reply buttons must be grouped together";
+      const firstQR = types.indexOf("QUICK_REPLY");
+      const lastQR = types.lastIndexOf("QUICK_REPLY");
+      if (firstQR !== -1) {
+        for (let i = firstQR; i <= lastQR; i++) {
+          if (types[i] !== "QUICK_REPLY") return "Quick reply buttons must be grouped together";
+        }
       }
     }
     return null;
@@ -351,7 +358,11 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
     const header = (() => {
       if (headerFormat === "NONE") return null;
       if (headerFormat === "LOCATION") return { format: "LOCATION" as const };
-      if (headerFormat === "TEXT") return { format: "TEXT" as const, text: headerText, varName: headerHasVar ? headerVarName : undefined, varExample: headerHasVar ? headerVarExample : undefined };
+      if (headerFormat === "TEXT") {
+        const headerVarList = extractVarNames(headerText);
+        const firstVar = headerVarList[0];
+        return { format: "TEXT" as const, text: headerText, varName: firstVar, varExample: firstVar ? (headerVarExamples[firstVar] ?? "") : undefined };
+      }
       return { format: headerFormat as "IMAGE" | "VIDEO" | "DOCUMENT" };
     })();
     const waButtons: WaButton[] = buttons.map((b) => {
@@ -528,26 +539,32 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
                         </select>
                         {headerFormat === "TEXT" && (
                           <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                              <input className="input" value={headerText} onChange={(e) => setHeaderText(e.target.value)} placeholder="Header text" maxLength={60} style={{ flex: 1 }} />
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <input
+                                className="input"
+                                value={headerText}
+                                onChange={(e) => setHeaderText(e.target.value)}
+                                placeholder={"Hello {{first_name}}"}
+                                style={{ flex: 1 }}
+                              />
                               {charCount(headerText, 60)}
                             </div>
-                            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
-                              <input type="checkbox" checked={headerHasVar} onChange={(e) => setHeaderHasVar(e.target.checked)} />
-                              Include a variable in the header
-                            </label>
-                            {headerHasVar && (
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px", marginTop: 8 }}>
-                                <div className="field" style={{ margin: 0 }}>
-                                  <label style={{ fontSize: 12 }}>Variable name</label>
-                                  <input className="input" value={headerVarName} onChange={(e) => setHeaderVarName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))} placeholder="sale_name" />
-                                </div>
-                                <div className="field" style={{ margin: 0 }}>
-                                  <label style={{ fontSize: 12 }}>Sample value</label>
-                                  <input className="input" value={headerVarExample} onChange={(e) => setHeaderVarExample(e.target.value)} placeholder="Summer Sale" />
-                                </div>
-                              </div>
+                            <div className="field-hint">{"Use {{variable_name}} to add one dynamic variable"}</div>
+                            {extractVarNames(headerText).length > 1 && (
+                              <div style={{ fontSize: 12, color: "var(--status-red)", marginTop: 4 }}>Header supports at most one variable</div>
                             )}
+                            {extractVarNames(headerText).slice(0, 1).map((v) => (
+                              <div key={v} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                                <label style={{ fontSize: 12, fontWeight: 500, color: "#1a73e8", whiteSpace: "nowrap" }}>{`{{${v}}}`} sample:</label>
+                                <input
+                                  className="input"
+                                  style={{ fontSize: 13, flex: 1 }}
+                                  value={headerVarExamples[v] ?? ""}
+                                  onChange={(e) => setHeaderVarExamples((prev) => ({ ...prev, [v]: e.target.value }))}
+                                  placeholder="Sample value"
+                                />
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -696,9 +713,7 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
                   category={category}
                   headerFormat={headerFormat}
                   headerText={headerText}
-                  headerHasVar={headerHasVar}
-                  headerVarName={headerVarName}
-                  headerVarExample={headerVarExample}
+                  headerVarExamples={headerVarExamples}
                   bodyText={bodyText}
                   bodyExamples={bodyExamples}
                   footerText={footerText}

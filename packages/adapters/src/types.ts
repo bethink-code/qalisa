@@ -47,7 +47,7 @@ export interface SendResult {
 
 export interface DeliveryEvent {
   providerMessageId: string;
-  status: "sent" | "delivered" | "failed";
+  status: "sent" | "delivered" | "read" | "failed";
   raw?: unknown;
 }
 

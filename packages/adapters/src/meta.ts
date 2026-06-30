@@ -10,7 +10,7 @@ import type {
   SendResult,
 } from "./types";
 
-const GRAPH_URL = "https://graph.facebook.com/v21.0";
+const GRAPH_URL = "https://graph.facebook.com/v22.0";
 
 function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
@@ -18,10 +18,11 @@ function bearer(token: string) {
 
 /** Map Meta status strings to normalised DeliveryEvent status. */
 function mapStatus(raw: string): DeliveryEvent["status"] | null {
-  if (raw === "delivered" || raw === "read") return "delivered";
   if (raw === "sent") return "sent";
+  if (raw === "delivered") return "delivered";
+  if (raw === "read") return "read";
   if (raw === "failed") return "failed";
-  return null;
+  return null; // "played" and future unknown statuses
 }
 
 /**
@@ -87,6 +88,7 @@ export const metaAdapter: ChannelAdapter = {
     const payload = msg.metaTemplateName
       ? {
           messaging_product: "whatsapp",
+          recipient_type: "individual",
           to: msg.to,
           type: "template",
           template: {
@@ -97,6 +99,7 @@ export const metaAdapter: ChannelAdapter = {
         }
       : {
           messaging_product: "whatsapp",
+          recipient_type: "individual",
           to: msg.to,
           type: "text",
           text: { body: msg.body ?? "" },
@@ -138,9 +141,11 @@ export const metaAdapter: ChannelAdapter = {
     const sigRaw = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
     const signature = String(sigRaw ?? "").replace(/^sha256=/, "");
     const expected = createHmac("sha256", appSecret).update(req.rawBody).digest("hex");
+    const expectedBuf = Buffer.from(expected, "hex");
+    const signatureBuf = Buffer.from(signature, "hex");
     if (
-      expected.length !== signature.length ||
-      !timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(signature, "utf8"))
+      signatureBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(expectedBuf, signatureBuf)
     ) {
       throw new Error("Meta webhook signature verification failed");
     }

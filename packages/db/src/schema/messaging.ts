@@ -25,6 +25,7 @@ export const messages = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp({ withTimezone: true }),
     deliveredAt: timestamp({ withTimezone: true }),
+    readAt: timestamp({ withTimezone: true }),
   },
   (t) => [
     unique().on(t.tenantId, t.idempotencyKey),

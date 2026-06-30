@@ -359,7 +359,7 @@ templatesRouter.post(
           name: metaTemplateName,
           language,
           category,
-          // parameter_format omitted — Meta infers named format from body_text_named_params
+          parameter_format: "named",
           components: buildMetaComponents(comp),
         };
       } else {
@@ -431,7 +431,7 @@ templatesRouter.post(
     if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
 
     const [template] = await db
-      .select({ id: templates.id, metaTemplateName: templates.metaTemplateName })
+      .select({ id: templates.id, metaTemplateName: templates.metaTemplateName, metaTemplateId: templates.metaTemplateId })
       .from(templates)
       .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)))
       .limit(1);
@@ -451,24 +451,33 @@ templatesRouter.post(
     const secret = await vault.resolveSecret(cred.secretRef, tenantId);
     const token = secret.reveal();
 
-    const metaRes = await fetch(
-      `${GRAPH_URL}/${wabaId}/message_templates?name=${encodeURIComponent(template.metaTemplateName)}&fields=id,name,status,category,rejected_reason`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
-    );
+    // Prefer ID-based lookup (unambiguous across language variants).
+    // Fall back to name-based search only if we don't have the ID yet.
+    const syncUrl = template.metaTemplateId
+      ? `${GRAPH_URL}/${template.metaTemplateId}?fields=id,name,status,category,rejected_reason`
+      : `${GRAPH_URL}/${wabaId}/message_templates?name=${encodeURIComponent(template.metaTemplateName)}&fields=id,name,status,category,rejected_reason`;
+
+    const metaRes = await fetch(syncUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!metaRes.ok) {
       const err = (await metaRes.json().catch(() => ({}))) as { error?: { message?: string } };
       res.status(metaRes.status).json({ error: `Meta API error: ${err.error?.message ?? metaRes.statusText}` });
       return;
     }
 
-    const data = (await metaRes.json()) as { data?: Array<{ id?: string; status?: string; category?: string; rejected_reason?: string }> };
-    const match = data.data?.[0];
+    // ID-based returns a single object; name-based returns { data: [...] }.
+    type MetaTemplateRecord = { id?: string; status?: string; category?: string; rejected_reason?: string };
+    const body = await metaRes.json() as MetaTemplateRecord & { data?: MetaTemplateRecord[] };
+    const match: MetaTemplateRecord | undefined = template.metaTemplateId ? body : body.data?.[0];
     if (!match) { res.status(404).json({ error: "Template not found on Meta" }); return; }
 
     const rawStatus = (match.status ?? "").toUpperCase();
     const newStatus: "approved" | "rejected" | "pending" | null =
       rawStatus === "APPROVED" || rawStatus === "ACTIVE" ? "approved"
-      : rawStatus === "REJECTED" || rawStatus === "DISABLED" ? "rejected"
+      : rawStatus === "REJECTED" || rawStatus === "DISABLED" || rawStatus === "PAUSED"
+        || rawStatus === "ARCHIVED" || rawStatus === "LOCKED" ? "rejected"
       : rawStatus === "PENDING" || rawStatus === "IN_REVIEW" ? "pending"
       : null;
 
@@ -477,7 +486,8 @@ templatesRouter.post(
       .set({
         ...(newStatus ? { whatsappStatus: newStatus } : {}),
         ...(match.category ? { whatsappCategory: match.category } : {}),
-        ...(match.rejected_reason ? { whatsappRejectionReason: match.rejected_reason } : {}),
+        // Clear rejection reason on approval; set or clear based on current status.
+        whatsappRejectionReason: newStatus === "approved" ? null : (match.rejected_reason ?? null),
       })
       .where(and(eq(templates.id, template.id), eq(templates.tenantId, tenantId)))
       .returning(SAFE_COLUMNS);

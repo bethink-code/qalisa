@@ -290,12 +290,12 @@ export function TemplatesPage() {
                       <td>{t.channel === "whatsapp" ? waStatusPill(t.whatsappStatus) : null}</td>
                       <td>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          {t.channel === "whatsapp" && t.whatsappStatus !== "approved" && (
+                          {t.channel === "whatsapp" && (t.whatsappStatus === null || t.whatsappStatus === "rejected") && (
                             <button
                               className="btn sm"
                               onClick={() => submitting === t.id ? setSubmitting(null) : openSubmit(t)}
                             >
-                              {submitting === t.id ? "Cancel" : "Submit to Meta"}
+                              {submitting === t.id ? "Cancel" : t.whatsappStatus === "rejected" ? "Resubmit to Meta" : "Submit to Meta"}
                             </button>
                           )}
                           <button className="btn sm" onClick={() => openEdit(t)}>Edit</button>

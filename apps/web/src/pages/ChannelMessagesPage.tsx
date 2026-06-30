@@ -102,7 +102,12 @@ function SendForm({ channel, onSent }: { channel: Channel; onSent: () => void })
   const [sent, setSent] = useState("");
   const [error, setError] = useState("");
 
-  const to = channel === "email" ? number : `${countryCode}${number.replace(/^0/, "")}`;
+  const trimmed = number.replace(/\s/g, "");
+  const to = channel === "email"
+    ? number
+    : (trimmed.startsWith("+") || trimmed.startsWith("00"))
+      ? trimmed
+      : `${countryCode}${trimmed.replace(/^0/, "")}`;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

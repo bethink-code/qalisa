@@ -4,5 +4,5 @@
 -- from providers that don't sign their webhook payloads.
 UPDATE "public"."provider_credentials"
 SET "config" = "config" || jsonb_build_object('webhookSecret', gen_random_uuid()::text)
-WHERE "provider" IN ('smsportal', 'mailjet')
+WHERE "provider"::text IN ('smsportal', 'mailjet')
   AND ("config"->>'webhookSecret') IS NULL;

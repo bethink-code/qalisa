@@ -66,6 +66,24 @@ export const metaAdapter: ChannelAdapter = {
     const phoneNumberId = String(config.phoneNumberId ?? "");
     const token = secret.reveal();
 
+    // Build template components for send payload.
+    let templateComponents: unknown[] | undefined;
+    if (msg.metaTemplateName) {
+      if (msg.whatsappCategory === "AUTHENTICATION" && msg.templateParams?.length) {
+        // Auth templates use a single positional OTP code.
+        templateComponents = [{ type: "body", parameters: [{ type: "text", text: msg.templateParams[0] }] }];
+      } else if (msg.templateVars && Object.keys(msg.templateVars).length > 0) {
+        // MARKETING/UTILITY: named parameters.
+        templateComponents = [{
+          type: "body",
+          parameters: Object.entries(msg.templateVars).map(([parameter_name, text]) => ({ type: "text", parameter_name, text })),
+        }];
+      } else if (msg.templateParams?.length) {
+        // Legacy positional fallback.
+        templateComponents = [{ type: "body", parameters: msg.templateParams.map((text) => ({ type: "text", text })) }];
+      }
+    }
+
     const payload = msg.metaTemplateName
       ? {
           messaging_product: "whatsapp",
@@ -74,14 +92,7 @@ export const metaAdapter: ChannelAdapter = {
           template: {
             name: msg.metaTemplateName,
             language: { code: msg.whatsappLanguage ?? "en" },
-            ...(msg.templateParams && msg.templateParams.length > 0
-              ? {
-                  components: [{
-                    type: "body",
-                    parameters: msg.templateParams.map((text) => ({ type: "text", text })),
-                  }],
-                }
-              : {}),
+            ...(templateComponents ? { components: templateComponents } : {}),
           },
         }
       : {

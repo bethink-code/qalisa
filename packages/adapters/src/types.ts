@@ -27,7 +27,11 @@ export interface OutboundMessage {
   metaTemplateName?: string;
   /** BCP-47 language code for the Meta template (e.g. "en"). */
   whatsappLanguage?: string;
-  /** Positional parameter values {{1}}, {{2}}… in the order they appear in the template body. */
+  /** Template category — drives parameter format at send time. */
+  whatsappCategory?: string;
+  /** Named parameter values: varName → value. Used for MARKETING/UTILITY templates. */
+  templateVars?: Record<string, string>;
+  /** Positional parameter values — used for AUTHENTICATION templates (single OTP code). */
   templateParams?: string[];
 }
 

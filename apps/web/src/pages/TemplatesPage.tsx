@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { type Template, api } from "../api/client";
+import { TemplateBuilder } from "../components/TemplateBuilder";
 
 type Channel = "email" | "sms" | "whatsapp";
 const CHANNEL_LABELS: Record<Channel, string> = { email: "Email", sms: "SMS", whatsapp: "WhatsApp" };
@@ -12,20 +13,117 @@ function waStatusPill(s: Template["whatsappStatus"]) {
   return <span className="pill muted">not submitted</span>;
 }
 
-interface FormState { channel: Channel; name: string; body: string }
-const BLANK: FormState = { channel: "email", name: "", body: "" };
+// ── Simple form for email / SMS ───────────────────────────────────────────────
+
+interface SimpleFormState { channel: "email" | "sms"; name: string; body: string }
+
+interface SimpleFormProps {
+  initialChannel?: "email" | "sms";
+  onSaved: () => void;
+  onCancel: () => void;
+}
+
+function SimpleTemplateForm({ initialChannel = "email", onSaved, onCancel }: SimpleFormProps) {
+  const [form, setForm] = useState<SimpleFormState>({ channel: initialChannel, name: "", body: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.body.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.templates.create(form);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="panel" style={{ marginBottom: 24 }}>
+      <div className="panel-head"><span className="panel-title">New template</span></div>
+      <div className="panel-body">
+        <form onSubmit={handleSave}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "0 20px" }}>
+            <div className="field">
+              <label>Channel</label>
+              <select className="select" value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value as "email" | "sms" }))}>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Name</label>
+              <input className="input" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="welcome_email" required />
+            </div>
+            <div className="field" style={{ gridColumn: "1 / -1" }}>
+              <label>Body</label>
+              <textarea
+                className="textarea"
+                value={form.body}
+                onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+                placeholder={"Hello {{name}}, welcome to…"}
+                rows={4}
+                required
+              />
+              <div className="field-hint">{"Use {{variable}} for substitution."}</div>
+            </div>
+          </div>
+          {error && <div style={{ color: "var(--status-red)", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn primary" disabled={saving}>{saving ? "Saving…" : "Create template"}</button>
+            <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Channel picker — first step for "New template" ────────────────────────────
+
+interface PickerProps {
+  onPick: (channel: Channel) => void;
+  onCancel: () => void;
+}
+
+function ChannelPicker({ onPick, onCancel }: PickerProps) {
+  return (
+    <div className="panel" style={{ marginBottom: 24 }}>
+      <div className="panel-head"><span className="panel-title">New template — choose channel</span></div>
+      <div className="panel-body">
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button className="btn" onClick={() => onPick("whatsapp")}>WhatsApp</button>
+          <button className="btn" onClick={() => onPick("email")}>Email</button>
+          <button className="btn" onClick={() => onPick("sms")}>SMS</button>
+        </div>
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Submit state ──────────────────────────────────────────────────────────────
 
 interface SubmitState { category: string; language: string }
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+type FormMode = "picker" | "whatsapp" | "simple-email" | "simple-sms" | "edit";
 
 export function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [mode, setMode] = useState<FormMode | null>(null);
   const [editing, setEditing] = useState<Template | null>(null);
-  const [form, setForm] = useState<FormState>(BLANK);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState("");
-  const [submitting, setSubmitting] = useState<string | null>(null); // templateId being submitted
+  const [editForm, setEditForm] = useState({ name: "", body: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const [submitForms, setSubmitForms] = useState<Record<string, SubmitState>>({});
   const [submitErrors, setSubmitErrors] = useState<Record<string, string>>({});
 
@@ -35,42 +133,31 @@ export function TemplatesPage() {
 
   useEffect(reload, []);
 
-  function openNew() {
+  function closeForm() {
+    setMode(null);
     setEditing(null);
-    setForm(BLANK);
-    setFormError("");
-    setShowForm(true);
   }
 
   function openEdit(t: Template) {
     setEditing(t);
-    setForm({ channel: t.channel, name: t.name, body: t.body });
-    setFormError("");
-    setShowForm(true);
+    setEditForm({ name: t.name, body: t.body });
+    setEditError("");
+    setMode("edit");
   }
 
-  function cancelForm() {
-    setShowForm(false);
-    setEditing(null);
-  }
-
-  async function handleSave(e: React.FormEvent) {
+  async function handleEditSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim() || !form.body.trim()) return;
-    setSaving(true);
-    setFormError("");
+    if (!editing || !editForm.name.trim()) return;
+    setEditSaving(true);
+    setEditError("");
     try {
-      if (editing) {
-        await api.templates.update(editing.id, { name: form.name, body: form.body });
-      } else {
-        await api.templates.create(form);
-      }
-      cancelForm();
+      await api.templates.update(editing.id, { name: editForm.name, body: editForm.body });
+      closeForm();
       reload();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save");
+      setEditError(err instanceof Error ? err.message : "Failed to save");
     } finally {
-      setSaving(false);
+      setEditSaving(false);
     }
   }
 
@@ -105,67 +192,59 @@ export function TemplatesPage() {
     <main className="page">
       <div className="page-head">
         <h1 className="page-title">Templates</h1>
-        {!showForm && (
-          <button className="btn primary" onClick={openNew}>New template</button>
+        {!mode && (
+          <button className="btn primary" onClick={() => setMode("picker")}>New template</button>
         )}
       </div>
 
-      {showForm && (
+      {/* Channel picker */}
+      {mode === "picker" && (
+        <ChannelPicker
+          onPick={(ch) => setMode(ch === "whatsapp" ? "whatsapp" : ch === "sms" ? "simple-sms" : "simple-email")}
+          onCancel={closeForm}
+        />
+      )}
+
+      {/* WhatsApp builder */}
+      {mode === "whatsapp" && (
+        <TemplateBuilder onSaved={() => { closeForm(); reload(); }} onCancel={closeForm} />
+      )}
+
+      {/* Email / SMS simple form */}
+      {(mode === "simple-email" || mode === "simple-sms") && (
+        <SimpleTemplateForm
+          initialChannel={mode === "simple-sms" ? "sms" : "email"}
+          onSaved={() => { closeForm(); reload(); }}
+          onCancel={closeForm}
+        />
+      )}
+
+      {/* Edit form — shared for all channels (body editing only) */}
+      {mode === "edit" && editing && (
         <div className="panel" style={{ marginBottom: 24 }}>
-          <div className="panel-head">
-            <span className="panel-title">{editing ? "Edit template" : "New template"}</span>
-          </div>
+          <div className="panel-head"><span className="panel-title">Edit template</span></div>
           <div className="panel-body">
-            <form onSubmit={handleSave}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "0 20px" }}>
-                {!editing && (
-                  <div className="field">
-                    <label htmlFor="t-channel">Channel</label>
-                    <select
-                      id="t-channel"
-                      className="select"
-                      value={form.channel}
-                      onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value as Channel }))}
-                    >
-                      <option value="email">Email</option>
-                      <option value="sms">SMS</option>
-                      <option value="whatsapp">WhatsApp</option>
-                    </select>
-                  </div>
-                )}
-                <div className="field" style={{ gridColumn: editing ? "1 / -1" : undefined }}>
-                  <label htmlFor="t-name">Name</label>
-                  <input
-                    id="t-name"
-                    className="input"
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="welcome_email"
-                    required
-                  />
-                </div>
-                <div className="field" style={{ gridColumn: "1 / -1" }}>
-                  <label htmlFor="t-body">Body</label>
-                  <textarea
-                    id="t-body"
-                    className="textarea"
-                    value={form.body}
-                    onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-                    placeholder="Hello {{name}}, welcome to…"
-                    rows={4}
-                    required
-                  />
-                  <div className="field-hint">Use {"{{variable}}"} for substitution.</div>
-                </div>
+            <form onSubmit={handleEditSave}>
+              <div className="field">
+                <label>Name</label>
+                <input className="input" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} required />
               </div>
-              {formError && (
-                <div style={{ color: "var(--status-red)", fontSize: 13, marginBottom: 12 }}>{formError}</div>
+              {editing.channel !== "whatsapp" && (
+                <div className="field">
+                  <label>Body</label>
+                  <textarea className="textarea" value={editForm.body} onChange={(e) => setEditForm((f) => ({ ...f, body: e.target.value }))} rows={4} />
+                  <div className="field-hint">{"Use {{variable}} for substitution."}</div>
+                </div>
               )}
+              {editing.channel === "whatsapp" && (
+                <div style={{ fontSize: 13, color: "var(--graphite)", padding: "10px 12px", background: "var(--surface-alt, #f5f5f5)", borderRadius: 4, marginBottom: 16 }}>
+                  WhatsApp template body is managed via components. Delete and recreate to change the content.
+                </div>
+              )}
+              {editError && <div style={{ color: "var(--status-red)", fontSize: 13, marginBottom: 12 }}>{editError}</div>}
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn primary" disabled={saving}>
-                  {saving ? "Saving…" : editing ? "Save changes" : "Create template"}
-                </button>
-                <button type="button" className="btn ghost" onClick={cancelForm}>Cancel</button>
+                <button className="btn primary" disabled={editSaving}>{editSaving ? "Saving…" : "Save changes"}</button>
+                <button type="button" className="btn ghost" onClick={closeForm}>Cancel</button>
               </div>
             </form>
           </div>
@@ -193,20 +272,20 @@ export function TemplatesPage() {
                 {templates.map((t) => (
                   <>
                     <tr key={t.id}>
-                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
+                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>
+                        {t.name}
+                        {t.whatsappCategory && (
+                          <span style={{ marginLeft: 6, fontSize: 11, color: "var(--graphite)", fontWeight: 400 }}>
+                            {t.whatsappCategory}
+                          </span>
+                        )}
+                      </td>
                       <td><span className="pill muted">{CHANNEL_LABELS[t.channel]}</span></td>
                       <td
-                        style={{
-                          maxWidth: 340,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          color: "var(--graphite)",
-                          fontSize: 13,
-                        }}
+                        style={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--graphite)", fontSize: 13 }}
                         title={t.body}
                       >
-                        {t.body}
+                        {t.body || (t.channel === "whatsapp" ? <em style={{ color: "var(--graphite)" }}>auth template</em> : "")}
                       </td>
                       <td>{t.channel === "whatsapp" ? waStatusPill(t.whatsappStatus) : null}</td>
                       <td>
@@ -234,9 +313,7 @@ export function TemplatesPage() {
                                 className="select"
                                 style={{ fontSize: 13 }}
                                 value={submitForms[t.id]?.category ?? "MARKETING"}
-                                onChange={(e) =>
-                                  setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, category: e.target.value } }))
-                                }
+                                onChange={(e) => setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, category: e.target.value } }))}
                               >
                                 {WA_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                               </select>
@@ -247,15 +324,11 @@ export function TemplatesPage() {
                                 className="input"
                                 style={{ fontSize: 13, width: 80 }}
                                 value={submitForms[t.id]?.language ?? "en"}
-                                onChange={(e) =>
-                                  setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, language: e.target.value } }))
-                                }
+                                onChange={(e) => setSubmitForms((prev) => ({ ...prev, [t.id]: { ...prev[t.id]!, language: e.target.value } }))}
                                 placeholder="en"
                               />
                             </div>
-                            <button className="btn primary sm" onClick={() => handleSubmitWhatsapp(t.id)}>
-                              Submit
-                            </button>
+                            <button className="btn primary sm" onClick={() => handleSubmitWhatsapp(t.id)}>Submit</button>
                             {submitErrors[t.id] && (
                               <span style={{ color: "var(--status-red)", fontSize: 13 }}>{submitErrors[t.id]}</span>
                             )}

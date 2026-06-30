@@ -9,12 +9,17 @@ export const templates = pgTable("templates", {
     .references(() => tenants.id, { onDelete: "cascade" }),
   channel: channelEnum().notNull(),
   name: text().notNull(),
-  body: text().notNull(),
+  body: text().notNull().default(""),
   variables: jsonb().$type<Record<string, unknown>>().notNull().default({}),
-  whatsappStatus: waTemplateStatusEnum(), // WhatsApp only
-  metaTemplateName: text(), // name submitted to Meta (lowercase_underscore)
-  whatsappCategory: text(), // MARKETING | UTILITY | AUTHENTICATION
-  whatsappLanguage: text().default("en"), // BCP-47 language code
-  whatsappRejectionReason: text(), // populated when Meta rejects
+  // WhatsApp metadata
+  whatsappStatus: waTemplateStatusEnum(),
+  metaTemplateName: text(),
+  metaTemplateId: text(),       // Meta's returned template ID (for edit/delete by ID)
+  whatsappCategory: text(),
+  whatsappLanguage: text().default("en"),
+  whatsappRejectionReason: text(),
+  // Full component structure (WhatsApp only, new-style templates)
+  components: jsonb().$type<unknown>(),
+  parameterFormat: text().default("named"), // 'named' | 'positional'
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });

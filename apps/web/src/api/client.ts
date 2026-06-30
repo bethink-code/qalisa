@@ -87,6 +87,24 @@ export interface Message {
   deliveredAt: string | null;
 }
 
+export interface WaButton {
+  type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "OTP";
+  text: string;
+  url?: string;
+  urlExample?: string;
+  phoneNumber?: string;
+  otpType?: "COPY_CODE" | "ONE_TAP" | "ZERO_TAP";
+  packageName?: string;
+  signatureHash?: string;
+}
+
+export interface WaComponents {
+  header?: { format: string; text?: string; varName?: string; varExample?: string; handle?: string } | null;
+  body: { text?: string; examples?: Record<string, string>; addSecurityRecommendation?: boolean };
+  footer?: { text?: string; codeExpirationMinutes?: number } | null;
+  buttons?: WaButton[] | null;
+}
+
 export interface Template {
   id: string;
   channel: "email" | "sms" | "whatsapp";
@@ -95,9 +113,12 @@ export interface Template {
   variables: Record<string, string>;
   whatsappStatus: "pending" | "approved" | "rejected" | null;
   metaTemplateName: string | null;
+  metaTemplateId: string | null;
   whatsappCategory: string | null;
   whatsappLanguage: string | null;
   whatsappRejectionReason: string | null;
+  components: WaComponents | null;
+  parameterFormat: string | null;
   createdAt: string;
 }
 
@@ -136,5 +157,6 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    getOne: (id: string) => apiFetch<Template>(`/templates/${id}`),
   },
 };

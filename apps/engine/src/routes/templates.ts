@@ -1,5 +1,6 @@
 import { db, templates } from "@qalisa/db";
 import { providerCredentials } from "@qalisa/db/schema";
+import type { WaButton, WaComponents, WaHeader } from "@qalisa/shared";
 import { CHANNELS, createTemplateSchema, submitWhatsappSchema, updateTemplateSchema } from "@qalisa/shared";
 import { and, eq } from "drizzle-orm";
 import { Router } from "express";
@@ -8,7 +9,9 @@ import { vault } from "../services";
 
 export const templatesRouter: Router = Router();
 
-/** Fields safe to return — tenantId is never exposed. */
+const GRAPH_URL = "https://graph.facebook.com/v23.0";
+
+/** Fields safe to return — tenantId never exposed. */
 const SAFE_COLUMNS = {
   id: templates.id,
   channel: templates.channel,
@@ -17,13 +20,117 @@ const SAFE_COLUMNS = {
   variables: templates.variables,
   whatsappStatus: templates.whatsappStatus,
   metaTemplateName: templates.metaTemplateName,
+  metaTemplateId: templates.metaTemplateId,
   whatsappCategory: templates.whatsappCategory,
   whatsappLanguage: templates.whatsappLanguage,
   whatsappRejectionReason: templates.whatsappRejectionReason,
+  components: templates.components,
+  parameterFormat: templates.parameterFormat,
   createdAt: templates.createdAt,
 };
 
-// POST /v1/templates — create a template for the tenant's channel.
+/** Extract unique named variable names in appearance order from a template string. */
+function extractVarNames(text: string): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const [, name] of text.matchAll(/\{\{(\w+)\}\}/g)) {
+    if (name && !seen.has(name)) { seen.add(name); names.push(name); }
+  }
+  return names;
+}
+
+/** Build the Meta API components array for MARKETING/UTILITY templates. */
+function buildMetaComponents(comp: WaComponents): unknown[] {
+  const out: unknown[] = [];
+
+  // Header
+  if (comp.header) {
+    const h: WaHeader = comp.header;
+    if (h.format === "TEXT" && h.text) {
+      const hasVar = !!h.varName;
+      out.push({
+        type: "HEADER",
+        format: "TEXT",
+        text: h.text,
+        ...(hasVar && h.varName ? {
+          example: {
+            header_text_named_params: [{ param_name: h.varName, example: h.varExample ?? "" }],
+          },
+        } : {}),
+      });
+    } else if (h.format === "LOCATION") {
+      out.push({ type: "HEADER", format: "LOCATION" });
+    } else if (h.handle && ["IMAGE", "VIDEO", "DOCUMENT"].includes(h.format)) {
+      out.push({ type: "HEADER", format: h.format, example: { header_handle: [h.handle] } });
+    }
+  }
+
+  // Body (required)
+  const bodyText = comp.body.text ?? "";
+  const varNames = extractVarNames(bodyText);
+  const examples = comp.body.examples ?? {};
+  out.push({
+    type: "BODY",
+    text: bodyText,
+    ...(varNames.length > 0 ? {
+      example: {
+        body_text_named_params: varNames.map((name) => ({
+          param_name: name,
+          example: examples[name] ?? "",
+        })),
+      },
+    } : {}),
+  });
+
+  // Footer
+  if (comp.footer?.text) {
+    out.push({ type: "FOOTER", text: comp.footer.text });
+  }
+
+  // Buttons
+  if (comp.buttons?.length) {
+    const buttons = comp.buttons.flatMap((b: WaButton) => {
+      if (b.type === "QUICK_REPLY") return [{ type: "QUICK_REPLY", text: b.text }];
+      if (b.type === "PHONE_NUMBER") return [{ type: "PHONE_NUMBER", text: b.text, phone_number: b.phoneNumber }];
+      if (b.type === "URL") {
+        const hasVar = b.url?.includes("{{1}}");
+        return [{
+          type: "URL",
+          text: b.text,
+          url: b.url,
+          ...(hasVar && b.urlExample ? { example: [b.urlExample] } : {}),
+        }];
+      }
+      return [];
+    });
+    if (buttons.length > 0) out.push({ type: "BUTTONS", buttons });
+  }
+
+  return out;
+}
+
+/** Build the payload for AUTHENTICATION templates (upsert endpoint). */
+function buildAuthPayload(metaTemplateName: string, language: string, comp: WaComponents): unknown {
+  const components: unknown[] = [
+    { type: "BODY", add_security_recommendation: comp.body.addSecurityRecommendation ?? false },
+  ];
+  if (comp.footer?.codeExpirationMinutes) {
+    components.push({ type: "FOOTER", code_expiration_minutes: comp.footer.codeExpirationMinutes });
+  }
+  if (comp.buttons?.length) {
+    const btn = comp.buttons[0];
+    if (btn && btn.type === "OTP") {
+      const buttonDef: Record<string, unknown> = { type: "OTP", otp_type: btn.otpType ?? "COPY_CODE" };
+      if (btn.otpType === "ONE_TAP" && btn.packageName) {
+        buttonDef["supported_apps"] = [{ package_name: btn.packageName, signature_hash: btn.signatureHash ?? "" }];
+      }
+      components.push({ type: "BUTTONS", buttons: [buttonDef] });
+    }
+  }
+  return { name: metaTemplateName, languages: [language], category: "AUTHENTICATION", components };
+}
+
+// POST /v1/templates
 templatesRouter.post(
   "/",
   asyncHandler(async (req, res) => {
@@ -35,7 +142,14 @@ templatesRouter.post(
       res.status(400).json({ error: "Invalid input", issues: parsed.error.issues });
       return;
     }
-    const { channel, name, body, variables } = parsed.data;
+    const { channel, name, variables, whatsappCategory, whatsappLanguage, components, parameterFormat } = parsed.data;
+    let { body } = parsed.data;
+
+    // Derive body from components.body.text for WhatsApp templates when body not provided.
+    if (channel === "whatsapp" && !body && components) {
+      const comp = components as WaComponents;
+      body = comp.body?.text ?? "";
+    }
 
     const [created] = await db
       .insert(templates)
@@ -45,8 +159,11 @@ templatesRouter.post(
         name,
         body,
         variables,
-        // WhatsApp templates must go through Meta approval before sending.
-        whatsappStatus: channel === "whatsapp" ? "pending" : null,
+        whatsappStatus: null, // null = not submitted yet
+        whatsappCategory: whatsappCategory ?? null,
+        whatsappLanguage: whatsappLanguage ?? "en",
+        components: components ?? null,
+        parameterFormat: parameterFormat ?? "named",
       })
       .returning(SAFE_COLUMNS);
 
@@ -54,7 +171,7 @@ templatesRouter.post(
   }),
 );
 
-// GET /v1/templates — list the tenant's templates (optionally filtered by channel).
+// GET /v1/templates
 templatesRouter.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -80,7 +197,7 @@ templatesRouter.get(
   }),
 );
 
-// GET /v1/templates/:id — fetch a single template.
+// GET /v1/templates/:id
 templatesRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -98,7 +215,7 @@ templatesRouter.get(
   }),
 );
 
-// PATCH /v1/templates/:id — update name, body, or variables.
+// PATCH /v1/templates/:id
 templatesRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -115,7 +232,12 @@ templatesRouter.patch(
       return;
     }
 
-    const updates = parsed.data;
+    // Keep body in sync with components.body.text when components is updated.
+    const updates: Record<string, unknown> = { ...parsed.data };
+    if (updates.components && !updates.body) {
+      const comp = updates.components as WaComponents;
+      updates.body = comp.body?.text ?? "";
+    }
 
     const [updated] = await db
       .update(templates)
@@ -128,24 +250,30 @@ templatesRouter.patch(
   }),
 );
 
-// DELETE /v1/templates/:id — remove a template (tenant-scoped).
+// DELETE /v1/templates/:id
 templatesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const tenantId = req.tenantId;
     if (!tenantId) { res.status(401).json({ error: "Unauthenticated" }); return; }
 
-    const [deleted] = await db
-      .delete(templates)
+    const [row] = await db
+      .select({ id: templates.id, metaTemplateId: templates.metaTemplateId, metaTemplateName: templates.metaTemplateName })
+      .from(templates)
       .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)))
-      .returning({ id: templates.id });
+      .limit(1);
 
-    if (!deleted) { res.status(404).json({ error: "Template not found" }); return; }
+    if (!row) { res.status(404).json({ error: "Template not found" }); return; }
+
+    await db
+      .delete(templates)
+      .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)));
+
     res.status(204).send();
   }),
 );
 
-// POST /v1/templates/:id/submit-whatsapp — submit a WhatsApp template to Meta for approval.
+// POST /v1/templates/:id/submit-whatsapp
 templatesRouter.post(
   "/:id/submit-whatsapp",
   asyncHandler(async (req, res) => {
@@ -160,7 +288,12 @@ templatesRouter.post(
     const { category, language } = parsed.data;
 
     const [template] = await db
-      .select(SAFE_COLUMNS)
+      .select({
+        ...SAFE_COLUMNS,
+        body: templates.body,
+        components: templates.components,
+        whatsappCategory: templates.whatsappCategory,
+      })
       .from(templates)
       .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)))
       .limit(1);
@@ -191,7 +324,6 @@ templatesRouter.post(
       res.status(422).json({ error: "No Meta Cloud API credential configured for this account" });
       return;
     }
-
     const wabaId = typeof cred.config?.wabaId === "string" ? cred.config.wabaId : "";
     if (!wabaId) {
       res.status(422).json({ error: "Meta credential is missing wabaId" });
@@ -201,39 +333,63 @@ templatesRouter.post(
     const secret = await vault.resolveSecret(cred.secretRef, tenantId);
     const token = secret.reveal();
 
-    // Build Meta template name: lowercase alphanumeric + underscores only.
+    // Derive the Meta template name: lowercase alphanumeric + underscores.
     const metaTemplateName = template.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "");
 
-    // Map named variables {{varName}} → positional {{1}}, {{2}}, … for Meta.
-    const varNames: string[] = [];
-    const varPattern = /\{\{(\w+)\}\}/g;
-    let match: RegExpExecArray | null;
-    while ((match = varPattern.exec(template.body)) !== null) {
-      const v = match[1];
-      if (v && !varNames.includes(v)) varNames.push(v);
-    }
-    const positionalBody = varNames.reduce(
-      (text, v, i) => text.replaceAll(`{{${v}}}`, `{{${i + 1}}}`),
-      template.body,
-    );
+    const comp = template.components as WaComponents | null;
+    const isAuth = category === "AUTHENTICATION";
 
-    const metaRes = await fetch(
-      `https://graph.facebook.com/v21.0/${wabaId}/message_templates`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
+    let endpoint: string;
+    let payload: unknown;
+
+    if (isAuth) {
+      // Authentication templates use a separate upsert endpoint and are auto-approved.
+      endpoint = `${GRAPH_URL}/${wabaId}/upsert_message_templates`;
+      payload = comp
+        ? buildAuthPayload(metaTemplateName, language, comp)
+        : { name: metaTemplateName, languages: [language], category: "AUTHENTICATION", components: [{ type: "BODY", add_security_recommendation: false }] };
+    } else {
+      // MARKETING/UTILITY: use named-param format with examples.
+      endpoint = `${GRAPH_URL}/${wabaId}/message_templates`;
+      if (comp) {
+        payload = {
           name: metaTemplateName,
-          category,
           language,
-          components: [{ type: "BODY", text: positionalBody }],
-        }),
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
+          category,
+          parameter_format: "named",
+          components: buildMetaComponents(comp),
+        };
+      } else {
+        // Legacy fallback: body-only with named params and placeholder examples.
+        const bodyText = template.body ?? "";
+        const varNames = extractVarNames(bodyText);
+        payload = {
+          name: metaTemplateName,
+          language,
+          category,
+          parameter_format: "named",
+          components: [{
+            type: "BODY",
+            text: bodyText,
+            ...(varNames.length > 0 ? {
+              example: {
+                body_text_named_params: varNames.map((name, i) => ({ param_name: name, example: `example_${i + 1}` })),
+              },
+            } : {}),
+          }],
+        };
+      }
+    }
+
+    const metaRes = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
 
     if (!metaRes.ok) {
       const err = (await metaRes.json().catch(() => ({}))) as { error?: { message?: string } };
@@ -243,9 +399,24 @@ templatesRouter.post(
       return;
     }
 
+    // Auth templates: response is an array of { id, status, language }
+    // Standard templates: response is { id, status, category }
+    const metaData = (await metaRes.json()) as { id?: string; status?: string; data?: Array<{ id?: string; status?: string }> };
+    const metaId = metaData.id ?? metaData.data?.[0]?.id ?? null;
+    const metaStatus = (metaData.status ?? metaData.data?.[0]?.status ?? "").toUpperCase();
+
+    // Auth templates come back APPROVED immediately; others are PENDING.
+    const newStatus = metaStatus === "APPROVED" ? "approved" : "pending";
+
     const [updated] = await db
       .update(templates)
-      .set({ whatsappStatus: "pending", metaTemplateName, whatsappCategory: category, whatsappLanguage: language })
+      .set({
+        whatsappStatus: newStatus,
+        metaTemplateName,
+        metaTemplateId: metaId,
+        whatsappCategory: category,
+        whatsappLanguage: language,
+      })
       .where(and(eq(templates.id, req.params.id ?? ""), eq(templates.tenantId, tenantId)))
       .returning(SAFE_COLUMNS);
 

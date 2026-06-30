@@ -24,6 +24,10 @@ export interface PrepareReady {
   /** Populated for approved WhatsApp template sends. */
   metaTemplateName?: string;
   whatsappLanguage?: string;
+  whatsappCategory?: string;
+  /** Named params for MARKETING/UTILITY templates: varName → value. */
+  templateVars?: Record<string, string>;
+  /** Positional params for AUTHENTICATION templates: [otpCode]. */
   templateParams?: string[];
 }
 
@@ -187,6 +191,8 @@ export async function prepareMessage(
   let resolvedBody = body ?? "";
   let metaTemplateName: string | undefined;
   let whatsappLanguage: string | undefined;
+  let whatsappCategory: string | undefined;
+  let templateVars: Record<string, string> | undefined;
   let templateParams: string[] | undefined;
 
   if (templateId) {
@@ -197,6 +203,7 @@ export async function prepareMessage(
         whatsappStatus: templates.whatsappStatus,
         metaTemplateName: templates.metaTemplateName,
         whatsappLanguage: templates.whatsappLanguage,
+        whatsappCategory: templates.whatsappCategory,
       })
       .from(templates)
       .where(and(eq(templates.id, templateId), eq(templates.tenantId, tenantId)))
@@ -210,7 +217,6 @@ export async function prepareMessage(
       return { status: "failed", messageId, error: "template not found" };
     }
 
-    // WhatsApp templates must be approved before sending.
     if (tmpl.channel === "whatsapp" && tmpl.whatsappStatus !== "approved") {
       await db
         .update(messages)
@@ -219,18 +225,26 @@ export async function prepareMessage(
       return { status: "failed", messageId, error: "template not approved by Meta" };
     }
 
-    resolvedBody = renderTemplate(tmpl.body, variables ?? {});
+    resolvedBody = renderTemplate(tmpl.body ?? "", variables ?? {});
 
     if (tmpl.channel === "whatsapp" && tmpl.metaTemplateName) {
       metaTemplateName = tmpl.metaTemplateName;
       whatsappLanguage = tmpl.whatsappLanguage ?? "en";
-      // Extract variable names in appearance order, map to values for positional params.
-      const seen = new Set<string>();
-      const varNames: string[] = [];
-      for (const [, name] of tmpl.body.matchAll(/\{\{(\w+)\}\}/g)) {
-        if (name && !seen.has(name)) { seen.add(name); varNames.push(name); }
+      whatsappCategory = tmpl.whatsappCategory ?? undefined;
+
+      if (tmpl.whatsappCategory === "AUTHENTICATION") {
+        // Auth: single positional OTP code — caller passes it as any variable key.
+        const code = variables?.code ?? variables?.otp ?? Object.values(variables ?? {})[0] ?? "";
+        templateParams = [code];
+      } else {
+        // MARKETING/UTILITY: named parameters.
+        const seen = new Set<string>();
+        const varNames: string[] = [];
+        for (const [, name] of (tmpl.body ?? "").matchAll(/\{\{(\w+)\}\}/g)) {
+          if (name && !seen.has(name)) { seen.add(name); varNames.push(name); }
+        }
+        templateVars = Object.fromEntries(varNames.map((n) => [n, variables?.[n] ?? ""]));
       }
-      templateParams = varNames.map((n) => variables?.[n] ?? "");
     }
   }
 
@@ -245,6 +259,8 @@ export async function prepareMessage(
     resolvedBody,
     metaTemplateName,
     whatsappLanguage,
+    whatsappCategory,
+    templateVars,
     templateParams,
   };
 }

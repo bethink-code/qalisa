@@ -57,6 +57,13 @@
       "when": 1782809625374,
       "tag": "0007_far_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782813553768,
+      "tag": "0008_tidy_red_wolf",
+      "breakpoints": true
     }
   ]
 }

@@ -172,8 +172,11 @@ webhooksRouter.get(
   }),
 );
 
-/** Process message_template_status_update changes — call only after HMAC is verified. */
-async function handleTemplateStatusUpdates(tenantId: string, body: unknown): Promise<number> {
+/**
+ * Process template-related webhook fields — call only after HMAC is verified.
+ * Handles: message_template_status_update, template_category_update
+ */
+async function handleTemplateWebhooks(tenantId: string, body: unknown): Promise<number> {
   const b = body as Record<string, unknown>;
   if (b["object"] !== "whatsapp_business_account") return 0;
   const entries = b["entry"] as Record<string, unknown>[] | undefined;
@@ -184,36 +187,52 @@ async function handleTemplateStatusUpdates(tenantId: string, body: unknown): Pro
     const changes = entry["changes"] as Record<string, unknown>[] | undefined;
     if (!Array.isArray(changes)) continue;
     for (const change of changes) {
-      if (change["field"] !== "message_template_status_update") continue;
+      const field = String(change["field"] ?? "");
       const value = change["value"] as Record<string, unknown> | undefined;
       if (!value) continue;
 
-      const event = String(value["event"] ?? "");
-      const metaTemplateName = String(value["message_template_name"] ?? "");
-      const reason = typeof value["reason"] === "string" ? value["reason"] : null;
-      if (!metaTemplateName || !event) continue;
+      if (field === "message_template_status_update") {
+        const event = String(value["event"] ?? "").toUpperCase();
+        const metaTemplateName = String(value["message_template_name"] ?? "");
+        const reason = typeof value["reason"] === "string" ? value["reason"] : null;
+        if (!metaTemplateName || !event) continue;
 
-      let newStatus: "approved" | "rejected" | null = null;
-      if (event === "APPROVED") newStatus = "approved";
-      else if (event === "REJECTED" || event === "DISABLED") newStatus = "rejected";
+        // Map Meta events to our internal status.
+        // APPROVED / REINSTATED → approved
+        // REJECTED / DISABLED / FLAGGED / PAUSED → rejected
+        // PENDING / IN_APPEAL → pending (back in review after edit)
+        const newStatus: "approved" | "rejected" | "pending" | null =
+          event === "APPROVED" || event === "REINSTATED" ? "approved"
+          : event === "REJECTED" || event === "DISABLED" || event === "FLAGGED" || event === "PAUSED" ? "rejected"
+          : event === "PENDING" || event === "IN_APPEAL" ? "pending"
+          : null;
 
-      if (!newStatus) continue;
+        if (!newStatus) continue;
 
-      const rows = await db
-        .update(templates)
-        .set({
-          whatsappStatus: newStatus,
-          ...(newStatus === "rejected" && reason ? { whatsappRejectionReason: reason } : {}),
-        })
-        .where(
-          and(
-            eq(templates.tenantId, tenantId),
-            eq(templates.metaTemplateName, metaTemplateName),
-          ),
-        )
-        .returning({ id: templates.id });
+        const rows = await db
+          .update(templates)
+          .set({
+            whatsappStatus: newStatus,
+            whatsappRejectionReason: newStatus === "rejected" && reason ? reason : null,
+          })
+          .where(and(eq(templates.tenantId, tenantId), eq(templates.metaTemplateName, metaTemplateName)))
+          .returning({ id: templates.id });
+        count += rows.length;
+      }
 
-      count += rows.length;
+      if (field === "template_category_update") {
+        // Meta has reclassified the template (e.g. UTILITY → MARKETING).
+        const metaTemplateName = String(value["message_template_name"] ?? "");
+        const newCategory = String(value["new_category"] ?? "");
+        if (!metaTemplateName || !newCategory) continue;
+
+        const rows = await db
+          .update(templates)
+          .set({ whatsappCategory: newCategory })
+          .where(and(eq(templates.tenantId, tenantId), eq(templates.metaTemplateName, metaTemplateName)))
+          .returning({ id: templates.id });
+        count += rows.length;
+      }
     }
   }
   return count;
@@ -236,8 +255,8 @@ webhooksRouter.post(
         body: req.body,
         rawBody: req.rawBody,
       });
-      // Signature verified — now process template approval/rejection events.
-      const templateUpdates = await handleTemplateStatusUpdates(tenantId, req.body);
+      // Signature verified — now process template status/category events.
+      const templateUpdates = await handleTemplateWebhooks(tenantId, req.body);
       res.status(200).json({ processed, templateUpdates });
     } catch (err) {
       const code = (err as { statusCode?: number }).statusCode;

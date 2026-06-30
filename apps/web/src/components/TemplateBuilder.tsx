@@ -521,7 +521,7 @@ export function TemplateBuilder({ onSaved, onCancel }: Props) {
                         <select className="select" style={{ marginBottom: 8 }} value={headerFormat} onChange={(e) => setHeaderFormat(e.target.value as HeaderFormat)}>
                           <option value="NONE">None</option>
                           <option value="TEXT">Text</option>
-                          <option value="LOCATION">Location</option>
+                          <option value="LOCATION" disabled>Location (coming soon)</option>
                           <option value="IMAGE" disabled>Image (coming soon)</option>
                           <option value="VIDEO" disabled>Video (coming soon)</option>
                           <option value="DOCUMENT" disabled>Document (coming soon)</option>
